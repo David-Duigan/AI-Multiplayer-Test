@@ -1,0 +1,180 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multiplayer Orbit Duel</title>
+    <style>
+        body {
+            margin: 0;
+            background: #0d0e15;
+            color: #fff;
+            font-family: sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+        #ui {
+            position: absolute;
+            top: 20px;
+            display: flex;
+            gap: 20px;
+            z-index: 10;
+        }
+        input, button {
+            padding: 10px 15px;
+            font-size: 16px;
+            border: none;
+            border-radius: 4px;
+        }
+        button {
+            background: #00f0ff;
+            color: #000;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        canvas {
+            border: 2px solid #1a1c29;
+            background: #050608;
+            box-shadow: 0 0 20px rgba(0, 240, 255, 0.1);
+        }
+    </style>
+</head>
+<body>
+
+<div id="ui">
+    <input type="text" id="roomInput" placeholder="Enter Room Code (e.g. 123)" />
+    <button onclick="joinRoom()">Join Game</button>
+    <span id="status">Enter room code to play!</span>
+</div>
+
+<canvas id="gameCanvas" width="800" height="600"></canvas>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+    const socket = io();
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const statusText = document.getElementById('status');
+
+    let myRole = null;
+    let players = {};
+    let bullets = [];
+    let keys = {};
+
+    const localPlayer = { x: 100, y: 300, angle: 0, speed: 4, color: '#00f0ff' };
+
+    window.addEventListener('keydown', e => keys[e.key] = true);
+    window.addEventListener('keyup', e => keys[e.key] = false);
+
+    function joinRoom() {
+        const room = document.getElementById('roomInput').value.trim();
+        if (room) {
+            socket.emit('joinGame', room);
+            statusText.innerText = "Waiting for Player 2...";
+        }
+    }
+
+    socket.on('initPlayer', (data) => {
+        myRole = data.role;
+        localPlayer.x = myRole === 'player1' ? 100 : 700;
+        localPlayer.angle = myRole === 'player1' ? 0 : Math.PI;
+        localPlayer.color = myRole === 'player1' ? '#00f0ff' : '#ff0055';
+    });
+
+    socket.on('startGame', (serverPlayers) => {
+        statusText.innerText = "Game Connected! WASD/Arrows to Move, Space to Shoot.";
+        players = serverPlayers;
+        requestAnimationFrame(gameLoop);
+    });
+
+    socket.on('opponentMove', (oppData) => {
+        if (players[oppData.id]) {
+            players[oppData.id].x = oppData.x;
+            players[oppData.id].y = oppData.y;
+            players[oppData.id].angle = oppData.angle;
+        }
+    });
+
+    socket.on('opponentShoot', (b) => {
+        bullets.push(b);
+    });
+
+    socket.on('playerLeft', () => {
+        statusText.innerText = "Opponent disconnected.";
+    });
+
+    let lastShot = 0;
+    function handleInput() {
+        let moved = false;
+        if (keys['w'] || keys['ArrowUp']) { localPlayer.y -= localPlayer.speed; moved = true; }
+        if (keys['s'] || keys['ArrowDown']) { localPlayer.y += localPlayer.speed; moved = true; }
+        if (keys['a'] || keys['ArrowLeft']) { localPlayer.x -= localPlayer.speed; moved = true; }
+        if (keys['d'] || keys['ArrowRight']) { localPlayer.x += localPlayer.speed; moved = true; }
+
+        // Keep inside bounds
+        localPlayer.x = Math.max(20, Math.min(780, localPlayer.x));
+        localPlayer.y = Math.max(20, Math.min(580, localPlayer.y));
+
+        if (moved) {
+            socket.emit('playerMove', { x: localPlayer.x, y: localPlayer.y, angle: localPlayer.angle });
+        }
+
+        if (keys[' '] && Date.now() - lastShot > 250) {
+            lastShot = Date.now();
+            const bullet = { x: localPlayer.x, y: localPlayer.y, dx: 7, color: localPlayer.color, owner: socket.id };
+            bullets.push(bullet);
+            socket.emit('shootOrb', bullet);
+        }
+    }
+
+    function updateBullets() {
+        for (let i = bullets.length - 1; i >= 0; i--) {
+            let b = bullets[i];
+            b.x += b.color === '#00f0ff' ? b.dx : -b.dx;
+            if (b.x < 0 || b.x > 800) bullets.splice(i, 1);
+        }
+    }
+
+    function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // Draw local player
+        ctx.fillStyle = localPlayer.color;
+        ctx.beginPath();
+        ctx.arc(localPlayer.x, localPlayer.y, 15, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Draw opponent
+        Object.keys(players).forEach(id => {
+            if (id !== socket.id) {
+                const p = players[id];
+                ctx.fillStyle = p.color;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, 15, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        });
+
+        // Draw bullets
+        bullets.forEach(b => {
+            ctx.fillStyle = b.color;
+            ctx.beginPath();
+            ctx.arc(b.x, b.y, 5, 0, Math.PI * 2);
+            ctx.fill();
+        });
+    }
+
+    function gameLoop() {
+        handleInput();
+        updateBullets();
+        draw();
+        requestAnimationFrame(gameLoop);
+    }
+</script>
+</body>
+</html>
