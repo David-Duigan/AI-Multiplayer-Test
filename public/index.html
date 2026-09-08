@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AETHER ARENA: OVERDRIVE</title>
+    <title>AETHER ARENA: HIGH-PERFORMANCE NETCODE</title>
     <style>
         * { box-sizing: border-box; user-select: none; }
         html, body {
@@ -46,7 +46,7 @@
 
 <div id="crosshair"></div>
 <div id="ui-overlay">
-    <input type="text" id="roomInput" placeholder="ROOM CODE" value="MATCH1" />
+    <input type="text" id="roomInput" placeholder="ROOM CODE" value="ARENA1" />
     <button onclick="joinRoom()">JOIN MATCH</button>
 </div>
 
@@ -66,13 +66,17 @@
 
     let myId = null;
     let localPlayer = { x: 0, y: 0, angle: 0 };
-    let serverPlayers = {};
-    let interpolatedPlayers = {};
-    let activeBullets = {}; // Rendered bullet map synced live with server
+    let inputSequence = 0;
+    let pendingInputs = [];
+
+    // Entity Interpolation Snapshots Buffer
+    let stateBuffer = [];
+    const INTERPOLATION_OFFSET_MS = 50;
+
+    let localBullets = {}; // Local independent simulation for bullets
     let powerups = [];
     let obstacles = [];
     let particles = [];
-    let hazardAngle = 0;
     let keys = {};
     let mouse = { x: 0, y: 0 };
     let screenShake = 0;
@@ -93,14 +97,14 @@
         crosshair.style.top = `${e.clientY}px`;
     });
 
-    // Spawn locally instantly, then rely purely on server positions
+    // Fire Bullets with Instant Client-Side Physics Simulation
     window.addEventListener('mousedown', () => {
-        if (!myId || !serverPlayers[myId] || serverPlayers[myId].hp <= 0) return;
+        const latestState = getLatestServerPlayerState(myId);
+        if (!myId || !latestState || latestState.hp <= 0) return;
 
-        const p = serverPlayers[myId];
         const angle = Math.atan2(mouse.y - localPlayer.y, mouse.x - localPlayer.x);
         const speed = 22;
-        const isTriple = p.tripleTimer > Date.now();
+        const isTriple = latestState.tripleTimer > Date.now();
 
         const angles = isTriple ? [angle - 0.2, angle, angle + 0.2] : [angle];
 
@@ -113,13 +117,14 @@
                 y: localPlayer.y + Math.sin(a) * 30,
                 vx: Math.cos(a) * speed,
                 vy: Math.sin(a) * speed,
-                color: p.color
+                color: latestState.color,
+                life: 80
             };
 
-            // 1. Instantly store locally so it appears frame 1 at the local ship tip
-            activeBullets[bulletId] = bulletData;
+            // Local simulation store
+            localBullets[bulletId] = bulletData;
 
-            // 2. Notify server to take over bullet trajectory and sync to all players
+            // Notify server to initiate authoritative trajectory & hit detection
             socket.emit('spawnBullet', bulletData);
         });
 
@@ -134,23 +139,19 @@
     socket.on('initPlayer', (data) => myId = data.id);
 
     socket.on('roomState', (data) => {
-        serverPlayers = data.players;
         obstacles = data.obstacles || [];
-        if (myId && serverPlayers[myId] && localPlayer.x === 0) {
-            localPlayer.x = serverPlayers[myId].x;
-            localPlayer.y = serverPlayers[myId].y;
-        }
-        updateScoreboard();
     });
 
     socket.on('respawnPlayer', (data) => {
         if (data.id === myId) {
             localPlayer.x = data.x;
             localPlayer.y = data.y;
+            pendingInputs = [];
         }
     });
 
     socket.on('impactEvent', (data) => {
+        delete localBullets[data.id]; // Remove visual bullet immediately on impact
         screenShake = 6;
         for (let i = 0; i < 10; i++) {
             particles.push({
@@ -161,45 +162,46 @@
         }
     });
 
-    // Receive live server-driven position updates for ALL bullets
+    // Receive Server Snapshot for Interpolation and Reconciliation
     socket.on('serverState', (data) => {
-        serverPlayers = data.players;
+        stateBuffer.push(data);
+        if (stateBuffer.length > 20) stateBuffer.shift();
+
         powerups = data.powerups;
         obstacles = data.obstacles;
-        hazardAngle = data.hazardAngle;
 
-        // Overwrite active bullets with official server live positions
-        activeBullets = data.bullets || {};
+        const serverMe = data.players[myId];
+        if (serverMe) {
+            // Client Reconciliation: Re-apply pending local inputs on top of last confirmed server state
+            localPlayer.x = serverMe.x;
+            localPlayer.y = serverMe.y;
 
-        Object.keys(serverPlayers).forEach(id => {
-            if (!interpolatedPlayers[id]) interpolatedPlayers[id] = { ...serverPlayers[id] };
+            pendingInputs = pendingInputs.filter(input => input.seq > serverMe.lastProcessedSeq);
+            pendingInputs.forEach(input => applyInputToLocalPlayer(input));
+        }
+
+        // Synchronize remote bullets fired by opponents into local simulation
+        Object.keys(data.bullets).forEach(id => {
+            const b = data.bullets[id];
+            if (b.owner !== myId) {
+                localBullets[id] = { ...b };
+            }
         });
 
-        updateScoreboard();
+        updateScoreboard(data.players);
     });
 
-    setInterval(() => {
-        if (!myId || !serverPlayers[myId] || serverPlayers[myId].hp <= 0) return;
-        socket.emit('playerTransform', {
-            x: localPlayer.x,
-            y: localPlayer.y,
-            angle: localPlayer.angle
-        });
-    }, 1000 / 60);
-
-    function updateLocalPlayer() {
-        if (!myId || !serverPlayers[myId] || serverPlayers[myId].hp <= 0) return;
-
-        const p = serverPlayers[myId];
-        let speed = p.speedTimer > Date.now() ? 9 : 5.5;
+    function applyInputToLocalPlayer(input) {
+        const latestState = getLatestServerPlayerState(myId);
+        let speed = (latestState && latestState.speedTimer > Date.now()) ? 9 : 5.5;
 
         let nextX = localPlayer.x;
         let nextY = localPlayer.y;
 
-        if (keys['w'] || keys['arrowup']) nextY -= speed;
-        if (keys['s'] || keys['arrowdown']) nextY += speed;
-        if (keys['a'] || keys['arrowleft']) nextX -= speed;
-        if (keys['d'] || keys['arrowright']) nextX += speed;
+        if (input.up) nextY -= speed;
+        if (input.down) nextY += speed;
+        if (input.left) nextX -= speed;
+        if (input.right) nextX += speed;
 
         obstacles.forEach(obs => {
             if (obs.hp > 0) {
@@ -212,9 +214,63 @@
             }
         });
 
-        localPlayer.x = Math.max(30, Math.min(canvas.width - 30, nextX));
-        localPlayer.y = Math.max(30, Math.min(canvas.height - 30, nextY));
-        localPlayer.angle = Math.atan2(mouse.y - localPlayer.y, mouse.x - localPlayer.x);
+        localPlayer.x = Math.max(30, Math.min(2000, nextX));
+        localPlayer.y = Math.max(30, Math.min(1200, nextY));
+        localPlayer.angle = input.angle;
+    }
+
+    function processLocalMovement() {
+        const latestState = getLatestServerPlayerState(myId);
+        if (!myId || !latestState || latestState.hp <= 0) return;
+
+        inputSequence++;
+        const input = {
+            seq: inputSequence,
+            up: keys['w'] || keys['arrowup'],
+            down: keys['s'] || keys['arrowdown'],
+            left: keys['a'] || keys['arrowleft'],
+            right: keys['d'] || keys['arrowright'],
+            angle: Math.atan2(mouse.y - localPlayer.y, mouse.x - localPlayer.x)
+        };
+
+        // 1. Predict Movement Locally
+        applyInputToLocalPlayer(input);
+
+        // 2. Queue for Server Reconciliation
+        pendingInputs.push(input);
+
+        // 3. Send Input to Server
+        socket.emit('playerInput', input);
+    }
+
+    // Helper: Return interpolated positions for opponents from server snapshots
+    function getInterpolatedOpponent(id, renderTime) {
+        if (stateBuffer.length < 2) return null;
+
+        for (let i = stateBuffer.length - 1; i >= 1; i--) {
+            const curr = stateBuffer[i];
+            const prev = stateBuffer[i - 1];
+
+            if (prev.timestamp <= renderTime && renderTime <= curr.timestamp) {
+                const p0 = prev.players[id];
+                const p1 = curr.players[id];
+                if (!p0 || !p1) return p1 || p0;
+
+                const ratio = (renderTime - prev.timestamp) / (curr.timestamp - prev.timestamp);
+                return {
+                    ...p1,
+                    x: p0.x + (p1.x - p0.x) * ratio,
+                    y: p0.y + (p1.y - p0.y) * ratio,
+                    angle: p0.angle + (p1.angle - p0.angle) * ratio
+                };
+            }
+        }
+        return stateBuffer[stateBuffer.length - 1].players[id];
+    }
+
+    function getLatestServerPlayerState(id) {
+        if (stateBuffer.length === 0) return null;
+        return stateBuffer[stateBuffer.length - 1].players[id];
     }
 
     function drawSpaceship(x, y, angle, color, hp, shieldActive, speedActive) {
@@ -252,6 +308,16 @@
             ctx.fillStyle = color;
             ctx.fillRect(x - 25, y - 32, (hp / 100) * 50, 5);
         }
+    }
+
+    function updateLocalBullets() {
+        Object.keys(localBullets).forEach(id => {
+            const b = localBullets[id];
+            b.x += b.vx;
+            b.y += b.vy;
+            b.life--;
+            if (b.life <= 0) delete localBullets[id];
+        });
     }
 
     function render() {
@@ -304,41 +370,59 @@
             if (part.life <= 0) particles.splice(i, 1);
         });
 
-        // Render Server-Synced Bullets
-        Object.values(activeBullets).forEach(b => {
+        // Render Local & Synchronized Remote Bullets
+        Object.values(localBullets).forEach(b => {
             ctx.fillStyle = b.color;
             ctx.shadowColor = b.color;
             ctx.shadowBlur = 8;
             ctx.beginPath(); ctx.arc(b.x, b.y, 5, 0, Math.PI * 2); ctx.fill();
         });
 
-        // Opponents
-        Object.keys(interpolatedPlayers).forEach(id => {
-            if (id !== myId) {
-                const p = interpolatedPlayers[id];
-                const curr = interpolatedPlayers[id];
-                const target = serverPlayers[id];
-                if (target) {
-                    curr.x += (target.x - curr.x) * 0.3;
-                    curr.y += (target.y - curr.y) * 0.3;
-                    if (p.hp > 0) drawSpaceship(curr.x, curr.y, target.angle, target.color, target.hp, target.shieldTimer > Date.now(), target.speedTimer > Date.now());
-                }
-            }
-        });
+        // Render Opponents with Entity Interpolation
+        const renderTime = Date.now() - INTERPOLATION_OFFSET_MS;
+        const latestSnapshot = stateBuffer.length > 0 ? stateBuffer[stateBuffer.length - 1] : null;
 
-        // Local Player
-        if (myId && serverPlayers[myId] && serverPlayers[myId].hp > 0) {
-            const p = serverPlayers[myId];
-            drawSpaceship(localPlayer.x, localPlayer.y, localPlayer.angle, p.color, p.hp, p.shieldTimer > Date.now(), p.speedTimer > Date.now());
+        if (latestSnapshot) {
+            Object.keys(latestSnapshot.players).forEach(id => {
+                if (id !== myId) {
+                    const interpolatedOpponent = getInterpolatedOpponent(id, renderTime);
+                    if (interpolatedOpponent && interpolatedOpponent.hp > 0) {
+                        drawSpaceship(
+                            interpolatedOpponent.x,
+                            interpolatedOpponent.y,
+                            interpolatedOpponent.angle,
+                            interpolatedOpponent.color,
+                            interpolatedOpponent.hp,
+                            interpolatedOpponent.shieldTimer > Date.now(),
+                            interpolatedOpponent.speedTimer > Date.now()
+                        );
+                    }
+                }
+            });
+        }
+
+        // Render Local Predictive Ship
+        const localState = getLatestServerPlayerState(myId);
+        if (myId && localState && localState.hp > 0) {
+            drawSpaceship(
+                localPlayer.x,
+                localPlayer.y,
+                localPlayer.angle,
+                localState.color,
+                localState.hp,
+                localState.shieldTimer > Date.now(),
+                localState.speedTimer > Date.now()
+            );
         }
 
         ctx.restore();
     }
 
-    function updateScoreboard() {
+    function updateScoreboard(players) {
+        if (!players) return;
         const container = document.getElementById('scores');
         container.innerHTML = '';
-        Object.values(serverPlayers).forEach((p, idx) => {
+        Object.values(players).forEach((p, idx) => {
             const row = document.createElement('div');
             row.className = 'score-row';
             row.style.color = p.color;
@@ -348,7 +432,8 @@
     }
 
     function loop() {
-        updateLocalPlayer();
+        processLocalMovement();
+        updateLocalBullets();
         render();
         requestAnimationFrame(loop);
     }

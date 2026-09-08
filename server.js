@@ -22,7 +22,7 @@ function createRoom(roomCode) {
     return {
         id: roomCode,
         players: {},
-        bullets: {}, // Map by bulletId for precise server syncing
+        bullets: {},
         powerups: [],
         obstacles: [
             { id: 1, x: 500, y: 350, r: 45, hp: 100, maxHp: 100 },
@@ -30,8 +30,7 @@ function createRoom(roomCode) {
             { id: 3, x: 500, y: 650, r: 45, hp: 100, maxHp: 100 },
             { id: 4, x: 1300, y: 650, r: 45, hp: 100, maxHp: 100 }
         ],
-        lastPowerupSpawn: Date.now(),
-        hazardAngle: 0
+        lastPowerupSpawn: Date.now()
     };
 }
 
@@ -65,7 +64,8 @@ io.on('connection', (socket) => {
                 color: PLAYER_COLORS[slot],
                 shieldTimer: 0,
                 tripleTimer: 0,
-                speedTimer: 0
+                speedTimer: 0,
+                lastProcessedSeq: 0
             };
 
             socket.emit('initPlayer', { id: socket.id, slot: slot, color: PLAYER_COLORS[slot] });
@@ -75,17 +75,41 @@ io.on('connection', (socket) => {
         }
     });
 
-    socket.on('playerTransform', (data) => {
+    // Authoritative Input Processing for Client Prediction & Reconciliation
+    socket.on('playerInput', (input) => {
         if (!currentRoom || !rooms[currentRoom]) return;
-        const p = rooms[currentRoom].players[socket.id];
-        if (p && p.hp > 0) {
-            p.x = data.x;
-            p.y = data.y;
-            p.angle = data.angle;
-        }
+        const room = rooms[currentRoom];
+        const p = room.players[socket.id];
+        if (!p || p.hp <= 0) return;
+
+        let speed = p.speedTimer > Date.now() ? 9 : 5.5;
+        let nextX = p.x;
+        let nextY = p.y;
+
+        if (input.up) nextY -= speed;
+        if (input.down) nextY += speed;
+        if (input.left) nextX -= speed;
+        if (input.right) nextX += speed;
+
+        // Obstacle Collisions
+        room.obstacles.forEach(obs => {
+            if (obs.hp > 0) {
+                const dist = Math.hypot(nextX - obs.x, nextY - obs.y);
+                if (dist < obs.r + 20) {
+                    const angle = Math.atan2(nextY - obs.y, nextX - obs.x);
+                    nextX = obs.x + Math.cos(angle) * (obs.r + 20);
+                    nextY = obs.y + Math.sin(angle) * (obs.r + 20);
+                }
+            }
+        });
+
+        p.x = Math.max(30, Math.min(2000, nextX));
+        p.y = Math.max(30, Math.min(1200, nextY));
+        p.angle = input.angle;
+        p.lastProcessedSeq = input.seq;
     });
 
-    // Accept local bullet spawn and register it in server simulation
+    // Client-predicted Bullet Registration
     socket.on('spawnBullet', (bulletData) => {
         if (!currentRoom || !rooms[currentRoom]) return;
         const room = rooms[currentRoom];
@@ -115,12 +139,10 @@ io.on('connection', (socket) => {
     });
 });
 
-// Server Loop (40 Ticks/Sec) - Server drives movement for all bullets
+// Server Loop (40 Ticks/Sec)
 setInterval(() => {
     Object.keys(rooms).forEach(code => {
         const room = rooms[code];
-
-        room.hazardAngle += 0.02;
 
         // Powerups
         if (Date.now() - room.lastPowerupSpawn > 8000 && room.powerups.length < 3) {
@@ -147,7 +169,7 @@ setInterval(() => {
             });
         }
 
-        // Server-Authoritative Bullet Position Updates & Collisions
+        // Server Authoritative Bullet Updates & Collisions
         const bulletIds = Object.keys(room.bullets);
         bulletIds.forEach(id => {
             const b = room.bullets[id];
@@ -162,7 +184,7 @@ setInterval(() => {
                 if (!hit && obs.hp > 0 && Math.hypot(obs.x - b.x, obs.y - b.y) < obs.r) {
                     hit = true;
                     obs.hp -= 10;
-                    io.to(code).emit('impactEvent', { x: b.x, y: b.y, color: '#aaa' });
+                    io.to(code).emit('impactEvent', { id: b.id, x: b.x, y: b.y, color: '#aaa' });
 
                     if (obs.hp <= 0) {
                         setTimeout(() => { obs.hp = obs.maxHp; }, 10000);
@@ -178,7 +200,7 @@ setInterval(() => {
                         let dmg = (p.shieldTimer > Date.now()) ? 5 : 25;
                         p.hp -= dmg;
 
-                        io.to(code).emit('impactEvent', { x: b.x, y: b.y, color: b.color });
+                        io.to(code).emit('impactEvent', { id: b.id, x: b.x, y: b.y, color: b.color });
 
                         if (p.hp <= 0) {
                             p.hp = 0;
@@ -206,16 +228,16 @@ setInterval(() => {
             }
         });
 
-        // Broadcast current bullet positions to ALL clients
+        // Broadcast State Snapshot with Timestamp
         io.to(code).emit('serverState', {
+            timestamp: Date.now(),
             players: room.players,
             bullets: room.bullets,
             powerups: room.powerups,
-            obstacles: room.obstacles,
-            hazardAngle: room.hazardAngle
+            obstacles: room.obstacles
         });
     });
 }, 1000 / 40);
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`Aether Arena Server running on port ${PORT}`));
+server.listen(PORT, () => console.log(`Aether Arena Netcode Server running on port ${PORT}`));
