@@ -3,265 +3,425 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AETHER ARENA - 4 Player Multiplayer</title>
+    <title>AETHER ARENA: OVERDRIVE</title>
     <style>
-        * { box-sizing: border-box; }
-        body {
+        * { box-sizing: border-box; user-select: none; }
+        html, body {
             margin: 0;
-            background: #090a0f;
+            padding: 0;
+            width: 100vw;
+            height: 100vh;
+            background: #050608;
             color: #fff;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            overflow: hidden;
             display: flex;
-            flex-direction: column;
             align-items: center;
             justify-content: center;
-            min-height: 100vh;
-            overflow: hidden;
         }
-        #hud {
+
+        #ui-overlay {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
             display: flex;
             gap: 15px;
-            margin-bottom: 10px;
-            background: rgba(255, 255, 255, 0.05);
-            padding: 10px 20px;
-            border-radius: 8px;
-            backdrop-filter: blur(5px);
+            z-index: 100;
+            background: rgba(12, 16, 26, 0.85);
+            padding: 12px 24px;
+            border-radius: 12px;
+            border: 1px solid rgba(0, 240, 255, 0.3);
+            box-shadow: 0 0 25px rgba(0, 240, 255, 0.2);
+            backdrop-filter: blur(10px);
         }
-        input, button {
-            padding: 8px 15px;
-            font-size: 15px;
-            border: none;
-            border-radius: 4px;
-            outline: none;
-        }
-        input { background: #181b26; color: #fff; border: 1px solid #333; }
-        button { background: #00f0ff; color: #000; font-weight: bold; cursor: pointer; transition: 0.2s; }
-        button:hover { background: #66f4ff; transform: scale(1.03); }
-        #canvas-wrapper { position: relative; }
-        canvas {
-            border: 2px solid #222638;
-            background: #0d0f17;
-            box-shadow: 0 0 30px rgba(0, 240, 255, 0.15);
+
+        input {
+            background: #0a0d14;
+            color: #00f0ff;
+            border: 1px solid #1e293b;
+            padding: 10px 16px;
             border-radius: 6px;
-            cursor: crosshair;
+            font-size: 16px;
+            outline: none;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-weight: bold;
         }
+
+        button {
+            background: linear-gradient(135deg, #00f0ff, #0088ff);
+            color: #000;
+            font-weight: 800;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            font-size: 15px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 0 15px rgba(0, 240, 255, 0.4);
+        }
+
+        button:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 25px rgba(0, 240, 255, 0.8);
+        }
+
         #scoreboard {
             position: absolute;
-            top: 15px;
-            right: 15px;
-            background: rgba(0,0,0,0.6);
-            padding: 10px;
-            border-radius: 6px;
-            font-size: 13px;
+            top: 20px;
+            right: 20px;
+            z-index: 90;
+            background: rgba(10, 14, 23, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 15px 20px;
+            border-radius: 10px;
+            backdrop-filter: blur(8px);
+            min-width: 180px;
+        }
+
+        .score-row {
+            display: flex;
+            justify-content: space-between;
+            font-weight: bold;
+            margin-top: 6px;
+            font-size: 14px;
+        }
+
+        #crosshair {
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            border: 2px solid #00f0ff;
+            border-radius: 50%;
             pointer-events: none;
+            transform: translate(-50%, -50%);
+            z-index: 200;
+            box-shadow: 0 0 10px #00f0ff;
+        }
+
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+            cursor: none;
         }
     </style>
 </head>
 <body>
 
-<div id="hud">
-    <input type="text" id="roomInput" placeholder="Room Code (e.g. ARENA1)" />
-    <button onclick="joinRoom()">Join Arena</button>
-    <span id="status" style="align-self: center; color: #aaa;">Enter code & join!</span>
+<div id="crosshair"></div>
+
+<div id="ui-overlay">
+    <input type="text" id="roomInput" placeholder="ROOM CODE" value="MATCH1" />
+    <button onclick="joinRoom()">JOIN MATCH</button>
+    <button onclick="toggleFullscreen()">FULLSCREEN 🖵</button>
 </div>
 
-<div id="canvas-wrapper">
-    <canvas id="gameCanvas" width="1000" height="700"></canvas>
-    <div id="scoreboard">
-        <strong>LEADERBOARD</strong>
-        <div id="scores"></div>
-    </div>
+<div id="scoreboard">
+    <div style="font-weight: 800; border-bottom: 1px solid #333; padding-bottom: 5px; color: #888;">ARENA MATCH</div>
+    <div id="scores"></div>
 </div>
+
+<canvas id="gameCanvas"></canvas>
 
 <script src="/socket.io/socket.io.js"></script>
 <script>
     const socket = io(window.location.origin, { transports: ['websocket', 'polling'] });
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
-    const statusText = document.getElementById('status');
-    const scoresDiv = document.getElementById('scores');
+    const crosshair = document.getElementById('crosshair');
 
     let myId = null;
-    let localPlayer = { x: 500, y: 350, vx: 0, vy: 0, speed: 4, dashCd: 0 };
-    let gameState = { players: {}, bullets: [], powerups: [], hazards: [] };
+    let mySlot = 0;
+    let players = {};
+    let bullets = [];
+    let particles = [];
     let keys = {};
     let mouse = { x: 0, y: 0 };
 
+    // Canvas Resizing
+    function resizeCanvas() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+    // Controls
     window.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
     window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
-    canvas.addEventListener('mousemove', e => {
-        const rect = canvas.getBoundingClientRect();
-        mouse.x = e.clientX - rect.left;
-        mouse.y = e.clientY - rect.top;
+    window.addEventListener('mousemove', e => {
+        mouse.x = e.clientX;
+        mouse.y = e.clientY;
+        crosshair.style.left = `${e.clientX}px`;
+        crosshair.style.top = `${e.clientY}px`;
     });
 
-    canvas.addEventListener('mousedown', () => {
-        if (!myId || !gameState.players[myId]) return;
-        const p = gameState.players[myId];
+    window.addEventListener('mousedown', () => {
+        if (!myId || !players[myId] || players[myId].hp <= 0) return;
+        const p = players[myId];
         const angle = Math.atan2(mouse.y - p.y, mouse.x - p.x);
-        socket.emit('shoot', { angle });
+
+        const bullet = {
+            id: Math.random().toString(),
+            owner: myId,
+            x: p.x + Math.cos(angle) * 30,
+            y: p.y + Math.sin(angle) * 30,
+            vx: Math.cos(angle) * 16,
+            vy: Math.sin(angle) * 16,
+            color: p.color
+        };
+
+        bullets.push(bullet);
+        socket.emit('spawnBullet', bullet);
     });
+
+    function toggleFullscreen() {
+        if (!document.fullscreenElement) {
+            document.documentElement.requestFullscreen();
+        } else {
+            document.exitFullscreen();
+        }
+    }
 
     function joinRoom() {
-        const code = document.getElementById('roomInput').value.trim();
-        if (code) {
-            socket.emit('joinGame', code);
-            statusText.innerText = "Connecting...";
+        const room = document.getElementById('roomInput').value.trim().toUpperCase();
+        if (room) {
+            socket.emit('joinGame', room);
+            document.getElementById('ui-overlay').style.opacity = '0.3';
         }
     }
 
     socket.on('initPlayer', (data) => {
         myId = data.id;
-        statusText.innerText = `Joined as Player! Controls: WASD/Arrows to Move, Shift to Dash, Mouse to Aim & Shoot.`;
+        mySlot = data.slot;
+        players[myId] = data.player;
     });
 
-    socket.on('tick', (state) => {
-        gameState = state;
-        if (myId && gameState.players[myId]) {
-            const serverP = gameState.players[myId];
-            if (localPlayer.x === 0 && localPlayer.y === 0) {
-                localPlayer.x = serverP.x;
-                localPlayer.y = serverP.y;
+    socket.on('playerJoined', (data) => {
+        players = data.players;
+        updateScoreboard();
+    });
+
+    socket.on('opponentState', (data) => {
+        if (players[data.id]) {
+            players[data.id].x = data.x;
+            players[data.id].y = data.y;
+            players[data.id].angle = data.angle;
+            players[data.id].hp = data.hp;
+        }
+    });
+
+    socket.on('bulletSpawned', (b) => bullets.push(b));
+
+    socket.on('applyDamage', (data) => {
+        if (data.victimId === myId) {
+            const p = players[myId];
+            p.hp -= data.damage;
+            if (p.hp <= 0) {
+                p.deaths++;
+                p.hp = 0;
+                setTimeout(() => {
+                    p.hp = 100;
+                    p.x = 200 + Math.random() * (canvas.width - 400);
+                    p.y = 200 + Math.random() * (canvas.height - 400);
+                }, 2500);
             }
         }
-        updateLeaderboard();
+        if (data.attackerId === myId && data.killed) {
+            players[myId].kills++;
+        }
+        updateScoreboard();
     });
 
-    function updateLeaderboard() {
-        scoresDiv.innerHTML = '';
-        Object.values(gameState.players).forEach(p => {
-            const row = document.createElement('div');
-            row.style.color = p.color;
-            row.innerHTML = `P${p.slot + 1}: ${p.kills} K / ${p.deaths} D`;
-            scoresDiv.appendChild(row);
+    socket.on('playerLeft', (id) => {
+        delete players[id];
+        updateScoreboard();
+    });
+
+    // Local Physics & Movement (Immediate Input Execution)
+    let lastDash = 0;
+    function updateLocalPlayer() {
+        if (!myId || !players[myId] || players[myId].hp <= 0) return;
+
+        const p = players[myId];
+        let speed = 6;
+
+        if (keys['shift'] && Date.now() - lastDash > 1200) {
+            speed = 35; // Dash Burst
+            lastDash = Date.now();
+
+            // Dash Particle Trail
+            for (let i = 0; i < 15; i++) {
+                particles.push({
+                    x: p.x, y: p.y,
+                    vx: (Math.random() - 0.5) * 4,
+                    vy: (Math.random() - 0.5) * 4,
+                    life: 20, color: p.color
+                });
+            }
+        }
+
+        if (keys['w'] || keys['arrowup']) p.y -= speed;
+        if (keys['s'] || keys['arrowdown']) p.y += speed;
+        if (keys['a'] || keys['arrowleft']) p.x -= speed;
+        if (keys['d'] || keys['arrowright']) p.x += speed;
+
+        p.x = Math.max(30, Math.min(canvas.width - 30, p.x));
+        p.y = Math.max(30, Math.min(canvas.height - 30, p.y));
+
+        p.angle = Math.atan2(mouse.y - p.y, mouse.x - p.x);
+
+        // Send state to opponents
+        socket.emit('updateState', {
+            x: p.x, y: p.y, angle: p.angle, hp: p.hp, kills: p.kills, deaths: p.deaths
         });
     }
 
-    function updateLocalPlayer() {
-        if (!myId || !gameState.players[myId] || gameState.players[myId].hp <= 0) return;
+    function updateBullets() {
+        for (let i = bullets.length - 1; i >= 0; i--) {
+            let b = bullets[i];
+            b.x += b.vx;
+            b.y += b.vy;
 
-        let moveX = 0;
-        let moveY = 0;
+            // Thruster particle for bullet
+            if (Math.random() > 0.5) {
+                particles.push({
+                    x: b.x, y: b.y,
+                    vx: -b.vx * 0.1, vy: -b.vy * 0.1,
+                    life: 10, color: b.color
+                });
+            }
 
-        if (keys['w'] || keys['arrowup']) moveY -= 1;
-        if (keys['s'] || keys['arrowdown']) moveY += 1;
-        if (keys['a'] || keys['arrowleft']) moveX -= 1;
-        if (keys['d'] || keys['arrowright']) moveX += 1;
+            // Hit Detection (Checked locally by bullet owner)
+            if (b.owner === myId) {
+                Object.keys(players).forEach(otherId => {
+                    if (otherId !== myId) {
+                        const target = players[otherId];
+                        if (target.hp > 0 && Math.hypot(target.x - b.x, target.y - b.y) < 25) {
+                            const killed = (target.hp - 25) <= 0;
+                            socket.emit('playerHit', { victimId: otherId, attackerId: myId, damage: 25, killed });
+                            bullets.splice(i, 1);
+                        }
+                    }
+                });
+            }
 
-        // Normalization
-        if (moveX !== 0 && moveY !== 0) {
-            moveX *= 0.7071;
-            moveY *= 0.7071;
+            if (b.x < 0 || b.x > canvas.width || b.y < 0 || b.y > canvas.height) {
+                bullets.splice(i, 1);
+            }
         }
-
-        let currentSpeed = localPlayer.speed;
-
-        // Dash Ability (Shift)
-        if (keys['shift'] && localPlayer.dashCd <= 0) {
-            localPlayer.dashCd = 60; // 2 sec cooldown
-            currentSpeed = 25; // Impulsive burst
-        }
-        if (localPlayer.dashCd > 0) localPlayer.dashCd--;
-
-        localPlayer.x += moveX * currentSpeed;
-        localPlayer.y += moveY * currentSpeed;
-
-        // Keep inside boundary
-        localPlayer.x = Math.max(20, Math.min(980, localPlayer.x));
-        localPlayer.y = Math.max(20, Math.min(680, localPlayer.y));
-
-        socket.emit('playerInput', { x: localPlayer.x, y: localPlayer.y });
     }
 
-    function draw() {
+    function drawSpaceship(p) {
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.angle);
+
+        // Engine Thruster Flame
+        ctx.fillStyle = '#ff5500';
+        ctx.beginPath();
+        ctx.moveTo(-22, -6);
+        ctx.lineTo(-32 - Math.random() * 10, 0);
+        ctx.lineTo(-22, 6);
+        ctx.fill();
+
+        // Ship Wings & Frame
+        ctx.fillStyle = p.color;
+        ctx.shadowColor = p.color;
+        ctx.shadowBlur = 15;
+
+        ctx.beginPath();
+        ctx.moveTo(25, 0); // Nose
+        ctx.lineTo(-18, -18); // Left wing
+        ctx.lineTo(-10, 0); // Center rear
+        ctx.lineTo(-18, 18); // Right wing
+        ctx.closePath();
+        ctx.fill();
+
+        // Cockpit Glass
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(4, 0, 5, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.restore();
+
+        // Health Bar & Name
+        if (p.hp > 0) {
+            ctx.fillStyle = 'rgba(255,255,255,0.2)';
+            ctx.fillRect(p.x - 25, p.y - 35, 50, 6);
+            ctx.fillStyle = p.color;
+            ctx.fillRect(p.x - 25, p.y - 35, (p.hp / 100) * 50, 6);
+        }
+    }
+
+    function render() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        // Grid lines
-        ctx.strokeStyle = '#151824';
+        // Dynamic Space Grid Pattern
+        ctx.strokeStyle = 'rgba(30, 41, 59, 0.4)';
         ctx.lineWidth = 1;
-        for (let x = 0; x < canvas.width; x += 40) {
+        const gridSize = 60;
+        for (let x = 0; x < canvas.width; x += gridSize) {
             ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
         }
-        for (let y = 0; y < canvas.height; y += 40) {
+        for (let y = 0; y < canvas.height; y += gridSize) {
             ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
         }
 
-        // Draw Hazards
-        gameState.hazards.forEach(h => {
-            ctx.fillStyle = '#ff0055';
-            ctx.shadowBlur = 15;
-            ctx.shadowColor = '#ff0055';
+        // Render Particles
+        for (let i = particles.length - 1; i >= 0; i--) {
+            let part = particles[i];
+            part.x += part.vx;
+            part.y += part.vy;
+            part.life--;
+            ctx.fillStyle = part.color;
             ctx.beginPath();
-            let hX = h.x + Math.cos(h.angle) * 150;
-            let hY = h.y + Math.sin(h.angle) * 150;
-            ctx.arc(hX, hY, h.r, 0, Math.PI * 2);
+            ctx.arc(part.x, part.y, 3, 0, Math.PI * 2);
             ctx.fill();
-        });
+            if (part.life <= 0) particles.splice(i, 1);
+        }
 
-        // Draw Powerups
-        gameState.powerups.forEach(pow => {
-            ctx.shadowBlur = 10;
-            if (pow.type === 'SHIELD') { ctx.fillStyle = '#00f0ff'; ctx.shadowColor = '#00f0ff'; }
-            if (pow.type === 'TRIPLE') { ctx.fillStyle = '#ffcc00'; ctx.shadowColor = '#ffcc00'; }
-            if (pow.type === 'HEAL') { ctx.fillStyle = '#00ff66'; ctx.shadowColor = '#00ff66'; }
-            
-            ctx.beginPath();
-            ctx.arc(pow.x, pow.y, 12, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.fillStyle = '#000';
-            ctx.font = 'bold 10px sans-serif';
-            ctx.fillText(pow.type[0], pow.x - 3, pow.y + 3);
-        });
-
-        // Draw Bullets
-        gameState.bullets.forEach(b => {
+        // Render Bullets
+        bullets.forEach(b => {
             ctx.fillStyle = b.color;
-            ctx.shadowBlur = 8;
             ctx.shadowColor = b.color;
+            ctx.shadowBlur = 10;
             ctx.beginPath();
-            ctx.arc(b.x, b.y, 5, 0, Math.PI * 2);
+            ctx.arc(b.x, b.y, 6, 0, Math.PI * 2);
             ctx.fill();
         });
 
-        // Draw Players
-        Object.values(gameState.players).forEach(p => {
-            if (p.hp <= 0) return;
-
-            // Render Player Body
-            ctx.shadowBlur = 12;
-            ctx.shadowColor = p.color;
-            ctx.fillStyle = p.color;
-            ctx.beginPath();
-            ctx.arc(p.x, p.y, 18, 0, Math.PI * 2);
-            ctx.fill();
-
-            // Active Shield Aura
-            if (p.shield > Date.now()) {
-                ctx.strokeStyle = '#00f0ff';
-                ctx.lineWidth = 3;
-                ctx.beginPath();
-                ctx.arc(p.x, p.y, 24, 0, Math.PI * 2);
-                ctx.stroke();
-            }
-
-            // Health Bar Above Head
-            ctx.shadowBlur = 0;
-            ctx.fillStyle = '#ff3333';
-            ctx.fillRect(p.x - 20, p.y - 30, 40, 5);
-            ctx.fillStyle = '#00ff66';
-            ctx.fillRect(p.x - 20, p.y - 30, (p.hp / 100) * 40, 5);
+        // Render All Players
+        Object.values(players).forEach(p => {
+            if (p.hp > 0) drawSpaceship(p);
         });
 
         ctx.shadowBlur = 0;
     }
 
-    function gameLoop() {
-        updateLocalPlayer();
-        draw();
-        requestAnimationFrame(gameLoop);
+    function updateScoreboard() {
+        const container = document.getElementById('scores');
+        container.innerHTML = '';
+        Object.values(players).forEach((p, idx) => {
+            const row = document.createElement('div');
+            row.className = 'score-row';
+            row.style.color = p.color;
+            row.innerHTML = `<span>PILOT ${idx + 1}</span> <span>${p.kills} K / ${p.deaths} D</span>`;
+            container.appendChild(row);
+        });
     }
 
-    requestAnimationFrame(gameLoop);
+    function loop() {
+        updateLocalPlayer();
+        updateBullets();
+        render();
+        requestAnimationFrame(loop);
+    }
+
+    requestAnimationFrame(loop);
 </script>
 </body>
 </html>
