@@ -7,58 +7,37 @@
     <style>
         * { box-sizing: border-box; user-select: none; }
         html, body {
-            margin: 0;
-            padding: 0;
-            width: 100vw;
-            height: 100vh;
-            background: #050608;
-            color: #fff;
-            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            margin: 0; padding: 0;
+            width: 100vw; height: 100vh;
+            background: #050608; color: #fff;
+            font-family: 'Segoe UI', system-ui, sans-serif;
             overflow: hidden;
-            display: flex;
-            align-items: center;
-            justify-content: center;
+            display: flex; align-items: center; justify-content: center;
         }
 
         #ui-overlay {
-            position: absolute;
-            top: 20px;
-            left: 50%;
+            position: absolute; top: 20px; left: 50%;
             transform: translateX(-50%);
-            display: flex;
-            gap: 15px;
-            z-index: 100;
+            display: flex; gap: 15px; z-index: 100;
             background: rgba(12, 16, 26, 0.85);
-            padding: 12px 24px;
-            border-radius: 12px;
+            padding: 12px 24px; border-radius: 12px;
             border: 1px solid rgba(0, 240, 255, 0.3);
             box-shadow: 0 0 25px rgba(0, 240, 255, 0.2);
             backdrop-filter: blur(10px);
         }
 
         input {
-            background: #0a0d14;
-            color: #00f0ff;
-            border: 1px solid #1e293b;
-            padding: 10px 16px;
-            border-radius: 6px;
-            font-size: 16px;
-            outline: none;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            font-weight: bold;
+            background: #0a0d14; color: #00f0ff;
+            border: 1px solid #1e293b; padding: 10px 16px;
+            border-radius: 6px; font-size: 16px; outline: none;
+            text-transform: uppercase; letter-spacing: 1px; font-weight: bold;
         }
 
         button {
             background: linear-gradient(135deg, #00f0ff, #0088ff);
-            color: #000;
-            font-weight: 800;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 6px;
-            font-size: 15px;
-            cursor: pointer;
-            transition: all 0.2s ease;
+            color: #000; font-weight: 800; border: none;
+            padding: 10px 20px; border-radius: 6px; font-size: 15px;
+            cursor: pointer; transition: all 0.2s ease;
             box-shadow: 0 0 15px rgba(0, 240, 255, 0.4);
         }
 
@@ -68,44 +47,26 @@
         }
 
         #scoreboard {
-            position: absolute;
-            top: 20px;
-            right: 20px;
-            z-index: 90;
+            position: absolute; top: 20px; right: 20px; z-index: 90;
             background: rgba(10, 14, 23, 0.8);
             border: 1px solid rgba(255, 255, 255, 0.1);
-            padding: 15px 20px;
-            border-radius: 10px;
-            backdrop-filter: blur(8px);
-            min-width: 180px;
+            padding: 15px 20px; border-radius: 10px;
+            backdrop-filter: blur(8px); min-width: 180px;
         }
 
         .score-row {
-            display: flex;
-            justify-content: space-between;
-            font-weight: bold;
-            margin-top: 6px;
-            font-size: 14px;
+            display: flex; justify-content: space-between;
+            font-weight: bold; margin-top: 6px; font-size: 14px;
         }
 
         #crosshair {
-            position: absolute;
-            width: 20px;
-            height: 20px;
-            border: 2px solid #00f0ff;
-            border-radius: 50%;
-            pointer-events: none;
-            transform: translate(-50%, -50%);
-            z-index: 200;
-            box-shadow: 0 0 10px #00f0ff;
+            position: absolute; width: 20px; height: 20px;
+            border: 2px solid #00f0ff; border-radius: 50%;
+            pointer-events: none; transform: translate(-50%, -50%);
+            z-index: 200; box-shadow: 0 0 10px #00f0ff;
         }
 
-        canvas {
-            display: block;
-            width: 100vw;
-            height: 100vh;
-            cursor: none;
-        }
+        canvas { display: block; width: 100vw; height: 100vh; cursor: none; }
     </style>
 </head>
 <body>
@@ -133,14 +94,15 @@
     const crosshair = document.getElementById('crosshair');
 
     let myId = null;
-    let mySlot = 0;
-    let players = {};
+    let localPlayer = { x: 0, y: 0, angle: 0, hp: 100 };
+    let serverPlayers = {};
+    let interpolatedPlayers = {};
     let bullets = [];
     let particles = [];
     let keys = {};
     let mouse = { x: 0, y: 0 };
+    let lastDash = 0;
 
-    // Canvas Resizing
     function resizeCanvas() {
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
@@ -148,7 +110,6 @@
     window.addEventListener('resize', resizeCanvas);
     resizeCanvas();
 
-    // Controls
     window.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
     window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
     window.addEventListener('mousemove', e => {
@@ -159,22 +120,9 @@
     });
 
     window.addEventListener('mousedown', () => {
-        if (!myId || !players[myId] || players[myId].hp <= 0) return;
-        const p = players[myId];
-        const angle = Math.atan2(mouse.y - p.y, mouse.x - p.x);
-
-        const bullet = {
-            id: Math.random().toString(),
-            owner: myId,
-            x: p.x + Math.cos(angle) * 30,
-            y: p.y + Math.sin(angle) * 30,
-            vx: Math.cos(angle) * 16,
-            vy: Math.sin(angle) * 16,
-            color: p.color
-        };
-
-        bullets.push(bullet);
-        socket.emit('spawnBullet', bullet);
+        if (!myId || !serverPlayers[myId] || serverPlayers[myId].hp <= 0) return;
+        const angle = Math.atan2(mouse.y - localPlayer.y, mouse.x - localPlayer.x);
+        socket.emit('requestShoot', { angle });
     });
 
     function toggleFullscreen() {
@@ -195,152 +143,122 @@
 
     socket.on('initPlayer', (data) => {
         myId = data.id;
-        mySlot = data.slot;
-        players[myId] = data.player;
     });
 
-    socket.on('playerJoined', (data) => {
-        players = data.players;
+    socket.on('roomState', (data) => {
+        serverPlayers = data.players;
+        if (myId && serverPlayers[myId] && localPlayer.x === 0 && localPlayer.y === 0) {
+            localPlayer.x = serverPlayers[myId].x;
+            localPlayer.y = serverPlayers[myId].y;
+        }
         updateScoreboard();
     });
 
-    socket.on('opponentState', (data) => {
-        if (players[data.id]) {
-            players[data.id].x = data.x;
-            players[data.id].y = data.y;
-            players[data.id].angle = data.angle;
-            players[data.id].hp = data.hp;
+    socket.on('respawnPlayer', (data) => {
+        if (data.id === myId) {
+            localPlayer.x = data.x;
+            localPlayer.y = data.y;
         }
     });
 
-    socket.on('bulletSpawned', (b) => bullets.push(b));
+    socket.on('serverState', (data) => {
+        serverPlayers = data.players;
+        bullets = data.bullets;
 
-    socket.on('applyDamage', (data) => {
-        if (data.victimId === myId) {
-            const p = players[myId];
-            p.hp -= data.damage;
-            if (p.hp <= 0) {
-                p.deaths++;
-                p.hp = 0;
-                setTimeout(() => {
-                    p.hp = 100;
-                    p.x = 200 + Math.random() * (canvas.width - 400);
-                    p.y = 200 + Math.random() * (canvas.height - 400);
-                }, 2500);
+        // Initialize target positions for interpolation
+        Object.keys(serverPlayers).forEach(id => {
+            if (!interpolatedPlayers[id]) {
+                interpolatedPlayers[id] = { ...serverPlayers[id] };
             }
-        }
-        if (data.attackerId === myId && data.killed) {
-            players[myId].kills++;
-        }
+        });
+
         updateScoreboard();
     });
 
-    socket.on('playerLeft', (id) => {
-        delete players[id];
-        updateScoreboard();
-    });
+    // Fixed-Rate Network Transmitter (Guarantees sync even when tab is out of focus)
+    setInterval(() => {
+        if (!myId || !serverPlayers[myId] || serverPlayers[myId].hp <= 0) return;
 
-    // Local Physics & Movement (Immediate Input Execution)
-    let lastDash = 0;
+        socket.emit('playerTransform', {
+            x: localPlayer.x,
+            y: localPlayer.y,
+            angle: localPlayer.angle
+        });
+    }, 1000 / 60);
+
+    // Local Movement Computation
     function updateLocalPlayer() {
-        if (!myId || !players[myId] || players[myId].hp <= 0) return;
+        if (!myId || !serverPlayers[myId] || serverPlayers[myId].hp <= 0) return;
 
-        const p = players[myId];
         let speed = 6;
 
         if (keys['shift'] && Date.now() - lastDash > 1200) {
-            speed = 35; // Dash Burst
+            speed = 35;
             lastDash = Date.now();
 
-            // Dash Particle Trail
-            for (let i = 0; i < 15; i++) {
+            for (let i = 0; i < 12; i++) {
                 particles.push({
-                    x: p.x, y: p.y,
-                    vx: (Math.random() - 0.5) * 4,
-                    vy: (Math.random() - 0.5) * 4,
-                    life: 20, color: p.color
+                    x: localPlayer.x, y: localPlayer.y,
+                    vx: (Math.random() - 0.5) * 4, vy: (Math.random() - 0.5) * 4,
+                    life: 15, color: serverPlayers[myId].color
                 });
             }
         }
 
-        if (keys['w'] || keys['arrowup']) p.y -= speed;
-        if (keys['s'] || keys['arrowdown']) p.y += speed;
-        if (keys['a'] || keys['arrowleft']) p.x -= speed;
-        if (keys['d'] || keys['arrowright']) p.x += speed;
+        if (keys['w'] || keys['arrowup']) localPlayer.y -= speed;
+        if (keys['s'] || keys['arrowdown']) localPlayer.y += speed;
+        if (keys['a'] || keys['arrowleft']) localPlayer.x -= speed;
+        if (keys['d'] || keys['arrowright']) localPlayer.x += speed;
 
-        p.x = Math.max(30, Math.min(canvas.width - 30, p.x));
-        p.y = Math.max(30, Math.min(canvas.height - 30, p.y));
+        localPlayer.x = Math.max(30, Math.min(canvas.width - 30, localPlayer.x));
+        localPlayer.y = Math.max(30, Math.min(canvas.height - 30, localPlayer.y));
+        localPlayer.angle = Math.atan2(mouse.y - localPlayer.y, mouse.x - localPlayer.x);
+    }
 
-        p.angle = Math.atan2(mouse.y - p.y, mouse.x - p.x);
+    // Smoothly Interpolate Opponent Positions
+    function updateOpponents() {
+        const lerpFactor = 0.35;
+        Object.keys(serverPlayers).forEach(id => {
+            if (id !== myId && interpolatedPlayers[id]) {
+                const target = serverPlayers[id];
+                const curr = interpolatedPlayers[id];
 
-        // Send state to opponents
-        socket.emit('updateState', {
-            x: p.x, y: p.y, angle: p.angle, hp: p.hp, kills: p.kills, deaths: p.deaths
+                curr.x += (target.x - curr.x) * lerpFactor;
+                curr.y += (target.y - curr.y) * lerpFactor;
+                curr.angle = target.angle;
+                curr.hp = target.hp;
+                curr.color = target.color;
+            }
         });
     }
 
-    function updateBullets() {
-        for (let i = bullets.length - 1; i >= 0; i--) {
-            let b = bullets[i];
-            b.x += b.vx;
-            b.y += b.vy;
-
-            // Thruster particle for bullet
-            if (Math.random() > 0.5) {
-                particles.push({
-                    x: b.x, y: b.y,
-                    vx: -b.vx * 0.1, vy: -b.vy * 0.1,
-                    life: 10, color: b.color
-                });
-            }
-
-            // Hit Detection (Checked locally by bullet owner)
-            if (b.owner === myId) {
-                Object.keys(players).forEach(otherId => {
-                    if (otherId !== myId) {
-                        const target = players[otherId];
-                        if (target.hp > 0 && Math.hypot(target.x - b.x, target.y - b.y) < 25) {
-                            const killed = (target.hp - 25) <= 0;
-                            socket.emit('playerHit', { victimId: otherId, attackerId: myId, damage: 25, killed });
-                            bullets.splice(i, 1);
-                        }
-                    }
-                });
-            }
-
-            if (b.x < 0 || b.x > canvas.width || b.y < 0 || b.y > canvas.height) {
-                bullets.splice(i, 1);
-            }
-        }
-    }
-
-    function drawSpaceship(p) {
+    function drawSpaceship(x, y, angle, color, hp) {
         ctx.save();
-        ctx.translate(p.x, p.y);
-        ctx.rotate(p.angle);
+        ctx.translate(x, y);
+        ctx.rotate(angle);
 
-        // Engine Thruster Flame
+        // Thruster flame
         ctx.fillStyle = '#ff5500';
         ctx.beginPath();
         ctx.moveTo(-22, -6);
-        ctx.lineTo(-32 - Math.random() * 10, 0);
+        ctx.lineTo(-32 - Math.random() * 8, 0);
         ctx.lineTo(-22, 6);
         ctx.fill();
 
-        // Ship Wings & Frame
-        ctx.fillStyle = p.color;
-        ctx.shadowColor = p.color;
-        ctx.shadowBlur = 15;
+        // Ship wings
+        ctx.fillStyle = color;
+        ctx.shadowColor = color;
+        ctx.shadowBlur = 12;
 
         ctx.beginPath();
-        ctx.moveTo(25, 0); // Nose
-        ctx.lineTo(-18, -18); // Left wing
-        ctx.lineTo(-10, 0); // Center rear
-        ctx.lineTo(-18, 18); // Right wing
+        ctx.moveTo(25, 0);
+        ctx.lineTo(-18, -18);
+        ctx.lineTo(-10, 0);
+        ctx.lineTo(-18, 18);
         ctx.closePath();
         ctx.fill();
 
-        // Cockpit Glass
+        // Cockpit
         ctx.fillStyle = '#ffffff';
         ctx.beginPath();
         ctx.arc(4, 0, 5, 0, Math.PI * 2);
@@ -348,26 +266,25 @@
 
         ctx.restore();
 
-        // Health Bar & Name
-        if (p.hp > 0) {
+        // Health Bar
+        if (hp > 0) {
             ctx.fillStyle = 'rgba(255,255,255,0.2)';
-            ctx.fillRect(p.x - 25, p.y - 35, 50, 6);
-            ctx.fillStyle = p.color;
-            ctx.fillRect(p.x - 25, p.y - 35, (p.hp / 100) * 50, 6);
+            ctx.fillRect(x - 25, y - 35, 50, 6);
+            ctx.fillStyle = color;
+            ctx.fillRect(x - 25, y - 35, (hp / 100) * 50, 6);
         }
     }
 
     function render() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        // Dynamic Space Grid Pattern
+        // Space Grid
         ctx.strokeStyle = 'rgba(30, 41, 59, 0.4)';
         ctx.lineWidth = 1;
-        const gridSize = 60;
-        for (let x = 0; x < canvas.width; x += gridSize) {
+        for (let x = 0; x < canvas.width; x += 60) {
             ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
         }
-        for (let y = 0; y < canvas.height; y += gridSize) {
+        for (let y = 0; y < canvas.height; y += 60) {
             ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
         }
 
@@ -384,7 +301,7 @@
             if (part.life <= 0) particles.splice(i, 1);
         }
 
-        // Render Bullets
+        // Render Bullets (Server-Synced)
         bullets.forEach(b => {
             ctx.fillStyle = b.color;
             ctx.shadowColor = b.color;
@@ -394,10 +311,18 @@
             ctx.fill();
         });
 
-        // Render All Players
-        Object.values(players).forEach(p => {
-            if (p.hp > 0) drawSpaceship(p);
+        // Render Opponents
+        Object.keys(interpolatedPlayers).forEach(id => {
+            if (id !== myId) {
+                const p = interpolatedPlayers[id];
+                if (p.hp > 0) drawSpaceship(p.x, p.y, p.angle, p.color, p.hp);
+            }
         });
+
+        // Render Local Player
+        if (myId && serverPlayers[myId] && serverPlayers[myId].hp > 0) {
+            drawSpaceship(localPlayer.x, localPlayer.y, localPlayer.angle, serverPlayers[myId].color, serverPlayers[myId].hp);
+        }
 
         ctx.shadowBlur = 0;
     }
@@ -405,7 +330,7 @@
     function updateScoreboard() {
         const container = document.getElementById('scores');
         container.innerHTML = '';
-        Object.values(players).forEach((p, idx) => {
+        Object.values(serverPlayers).forEach((p, idx) => {
             const row = document.createElement('div');
             row.className = 'score-row';
             row.style.color = p.color;
@@ -416,7 +341,7 @@
 
     function loop() {
         updateLocalPlayer();
-        updateBullets();
+        updateOpponents();
         render();
         requestAnimationFrame(loop);
     }

@@ -9,7 +9,7 @@ const io = new Server(server, { cors: { origin: "*" } });
 app.use(express.static('public'));
 
 const PLAYER_COLORS = ['#00f0ff', '#ff0055', '#ffcc00', '#00ff66'];
-const PLAYER_SPAWNS = [
+const SPAWNS = [
     { x: 150, y: 150 },
     { x: 1770, y: 930 },
     { x: 1770, y: 150 },
@@ -17,6 +17,15 @@ const PLAYER_SPAWNS = [
 ];
 
 const rooms = {};
+
+function createRoom(roomCode) {
+    return {
+        id: roomCode,
+        players: {},
+        bullets: [],
+        nextBulletId: 1
+    };
+}
 
 io.on('connection', (socket) => {
     let currentRoom = null;
@@ -26,11 +35,7 @@ io.on('connection', (socket) => {
         socket.join(roomCode);
 
         if (!rooms[roomCode]) {
-            rooms[roomCode] = {
-                id: roomCode,
-                players: {},
-                powerups: []
-            };
+            rooms[roomCode] = createRoom(roomCode);
         }
 
         const room = rooms[roomCode];
@@ -38,9 +43,9 @@ io.on('connection', (socket) => {
 
         if (playerIds.length < 4) {
             const slot = playerIds.length;
-            const spawn = PLAYER_SPAWNS[slot];
+            const spawn = SPAWNS[slot] || SPAWNS[0];
 
-            const newPlayer = {
+            room.players[socket.id] = {
                 id: socket.id,
                 slot: slot,
                 x: spawn.x,
@@ -52,49 +57,48 @@ io.on('connection', (socket) => {
                 color: PLAYER_COLORS[slot]
             };
 
-            room.players[socket.id] = newPlayer;
-
-            // Notify joining player
-            socket.emit('initPlayer', { id: socket.id, slot: slot, player: newPlayer });
-            
-            // Sync everyone in room
-            io.to(roomCode).emit('playerJoined', { players: room.players });
+            socket.emit('initPlayer', { id: socket.id, slot: slot, color: PLAYER_COLORS[slot] });
+            io.to(roomCode).emit('roomState', { players: room.players });
         } else {
             socket.emit('roomFull');
         }
     });
 
-    // Client-authoritative sync
-    socket.on('updateState', (data) => {
+    // Client sends predicted position
+    socket.on('playerTransform', (data) => {
         if (!currentRoom || !rooms[currentRoom]) return;
         const p = rooms[currentRoom].players[socket.id];
-        if (p) {
+        if (p && p.hp > 0) {
             p.x = data.x;
             p.y = data.y;
             p.angle = data.angle;
-            p.hp = data.hp;
-            p.kills = data.kills;
-            p.deaths = data.deaths;
-        }
-        socket.to(currentRoom).emit('opponentState', { id: socket.id, ...data });
-    });
-
-    socket.on('spawnBullet', (bulletData) => {
-        if (currentRoom) {
-            socket.to(currentRoom).emit('bulletSpawned', bulletData);
         }
     });
 
-    socket.on('playerHit', (hitData) => {
-        if (currentRoom) {
-            io.to(currentRoom).emit('applyDamage', hitData);
-        }
+    // Client requests bullet spawn (Server Authenticated)
+    socket.on('requestShoot', (data) => {
+        if (!currentRoom || !rooms[currentRoom]) return;
+        const room = rooms[currentRoom];
+        const p = room.players[socket.id];
+        if (!p || p.hp <= 0) return;
+
+        const speed = 18;
+        room.bullets.push({
+            id: room.nextBulletId++,
+            owner: socket.id,
+            x: p.x + Math.cos(data.angle) * 30,
+            y: p.y + Math.sin(data.angle) * 30,
+            vx: Math.cos(data.angle) * speed,
+            vy: Math.sin(data.angle) * speed,
+            color: p.color,
+            life: 90
+        });
     });
 
     socket.on('disconnect', () => {
         if (currentRoom && rooms[currentRoom]) {
             delete rooms[currentRoom].players[socket.id];
-            io.to(currentRoom).emit('playerLeft', socket.id);
+            io.to(currentRoom).emit('roomState', { players: rooms[currentRoom].players });
             if (Object.keys(rooms[currentRoom].players).length === 0) {
                 delete rooms[currentRoom];
             }
@@ -102,5 +106,64 @@ io.on('connection', (socket) => {
     });
 });
 
+// Server Loop: 40 FPS Bullet Physics & Hit Detection
+setInterval(() => {
+    Object.keys(rooms).forEach(code => {
+        const room = rooms[code];
+
+        // Update Bullets
+        for (let i = room.bullets.length - 1; i >= 0; i--) {
+            const b = room.bullets[i];
+            b.x += b.vx;
+            b.y += b.vy;
+            b.life--;
+
+            let hit = false;
+
+            // Server Hit Check against all living targets
+            Object.values(room.players).forEach(p => {
+                if (!hit && p.hp > 0 && p.id !== b.owner) {
+                    const dist = Math.hypot(p.x - b.x, p.y - b.y);
+                    if (dist < 26) {
+                        hit = true;
+                        p.hp -= 25;
+
+                        if (p.hp <= 0) {
+                            p.hp = 0;
+                            p.deaths++;
+                            if (room.players[b.owner]) {
+                                room.players[b.owner].kills++;
+                            }
+
+                            // Delayed Respawn
+                            const targetId = p.id;
+                            const slot = p.slot;
+                            setTimeout(() => {
+                                if (room.players[targetId]) {
+                                    const spawn = SPAWNS[slot] || SPAWNS[0];
+                                    room.players[targetId].hp = 100;
+                                    room.players[targetId].x = spawn.x;
+                                    room.players[targetId].y = spawn.y;
+                                    io.to(code).emit('respawnPlayer', { id: targetId, x: spawn.x, y: spawn.y });
+                                }
+                            }, 3000);
+                        }
+                    }
+                }
+            });
+
+            if (hit || b.life <= 0 || b.x < -100 || b.x > 3000 || b.y < -100 || b.y > 3000) {
+                room.bullets.splice(i, 1);
+            }
+        }
+
+        // Broadcast State
+        io.to(code).emit('serverState', {
+            players: room.players,
+            bullets: room.bullets
+        });
+    });
+}, 1000 / 40);
+
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`Aether Arena Overdrive active on port ${PORT}`));
+server.listen(PORT, () => console.log(`Aether Arena Server running on port ${PORT}`));
