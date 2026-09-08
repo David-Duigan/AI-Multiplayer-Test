@@ -186,6 +186,17 @@ io.on('connection', (socket) => {
   });
 });
 
+function getPublicRoomState(room) {
+  return {
+    id: room.id,
+    players: room.players,
+    state: room.state,
+    currentTurnPlayerId: room.players.filter(p => p.isAlive)[room.currentTurnIndex]?.id,
+    currentDrawingPass: room.currentDrawingPass,
+    totalPassesTarget: room.totalPassesTarget
+  };
+}
+
 function initiateVotingIntermission(room) {
   room.state = 'INTERMISSION';
   io.to(room.id).emit('start_intermission', { delaySeconds: 5 });
@@ -312,13 +323,18 @@ function processVotes(room) {
     }
   }
 
-  // Broadcast animation reveal before applying next step
   io.to(room.id).emit('reveal_votes_animation', resultPayload);
-}
 
-socket.on('continue_after_vote_reveal', (payload) => {
-  // Handled on client after delay or server timeout
-});
+  const delayTime = (room.detailedVotes.length * 300) + 3000;
+  setTimeout(() => {
+    if (!rooms[room.id]) return;
+    if (resultPayload.nextAction === 'GAMEOVER') {
+      io.to(room.id).emit('game_over', resultPayload.gameOverData);
+    } else {
+      nextRound(room);
+    }
+  }, delayTime);
+}
 
 function nextRound(room) {
   room.state = 'DRAWING';
