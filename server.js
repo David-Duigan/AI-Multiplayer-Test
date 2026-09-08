@@ -33,11 +33,30 @@ io.on('connection', (socket) => {
     }
 
     const room = rooms[roomId];
-    if (room.state === 'LOBBY' && room.players.length < 8) {
-      room.players.push({ id: socket.id, name: playerName, isAlive: true });
+    if (room.state === 'LOBBY' && room.players.length < 12) {
+      // Prevent duplicate socket ID joins
+      if (!room.players.some(p => p.id === socket.id)) {
+        room.players.push({ id: socket.id, name: playerName, isAlive: true });
+      }
     }
 
-    io.to(roomId).emit('room_updated', room);
+    io.to(roomId).emit('room_updated', getPublicRoomState(room));
+  });
+
+  socket.on('leave_room', () => {
+    if (!currentRoom || !rooms[currentRoom]) return;
+    const room = rooms[currentRoom];
+    
+    socket.leave(currentRoom);
+    room.players = room.players.filter(p => p.id !== socket.id);
+
+    if (room.players.length === 0) {
+      if (room.voteTimer) clearTimeout(room.voteTimer);
+      delete rooms[currentRoom];
+    } else {
+      io.to(currentRoom).emit('room_updated', getPublicRoomState(room));
+    }
+    currentRoom = null;
   });
 
   socket.on('start_game', () => {
@@ -54,11 +73,11 @@ io.on('connection', (socket) => {
       const isImposter = (p.id === room.imposterId);
       io.to(p.id).emit('role_assignment', {
         role: isImposter ? 'IMPOSTER' : 'ARTIST',
-        word: isImposter ? 'IMPOSTER' : room.secretWord
+        word: isImposter ? 'IMPOSTER' : room.secretWord,
+        imposterId: room.imposterId
       });
     });
 
-    // Notify all clients to show 3s countdown
     io.to(currentRoom).emit('pre_game_countdown');
 
     setTimeout(() => {
@@ -98,6 +117,11 @@ io.on('connection', (socket) => {
   socket.on('submit_vote', ({ targetId }) => {
     const room = rooms[currentRoom];
     if (!room || room.state !== 'VOTING') return;
+    
+    // Dead players cannot submit votes
+    const voter = room.players.find(p => p.id === socket.id);
+    if (!voter || !voter.isAlive) return;
+
     recordUserVote(room, socket.id, targetId);
   });
 
@@ -129,7 +153,7 @@ function startVotingPhase(room) {
   room.votedPlayers = new Set();
 
   const alivePlayers = room.players.filter(p => p.isAlive);
-  io.to(room.id).emit('start_voting', { alivePlayers });
+  io.to(room.id).emit('start_voting', { alivePlayers, players: room.players });
 
   if (room.voteTimer) clearTimeout(room.voteTimer);
   room.voteTimer = setTimeout(() => {
@@ -188,6 +212,9 @@ function processVotes(room) {
     const eliminated = room.players.find(p => p.id === votedOutId);
     eliminated.isAlive = false;
 
+    // Direct notification to the eliminated user
+    io.to(eliminated.id).emit('you_were_eliminated', { imposterId: room.imposterId, imposterName: imposterPlayer.name });
+
     if (votedOutId === room.imposterId) {
       room.state = 'GAMEOVER';
       io.to(room.id).emit('game_over', {
@@ -234,6 +261,7 @@ function getPublicRoomState(room) {
     id: room.id,
     players: room.players,
     state: room.state,
+    imposterId: room.imposterId,
     currentTurnPlayerId: room.players.filter(p => p.isAlive)[room.currentTurnIndex]?.id
   };
 }
