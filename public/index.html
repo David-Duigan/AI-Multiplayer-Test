@@ -1,594 +1,316 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AETHER ARENA: NEON OVERDRIVE</title>
-    <style>
-        * { box-sizing: border-box; user-select: none; }
-        html, body {
-            margin: 0; padding: 0; width: 100vw; height: 100vh;
-            background: #020305; color: #fff;
-            font-family: 'Orbitron', 'Segoe UI', system-ui, sans-serif;
-            overflow: hidden; display: flex; align-items: center; justify-content: center;
-        }
-        #ui-overlay {
-            position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
-            display: flex; gap: 15px; z-index: 100;
-            background: rgba(8, 12, 22, 0.85); padding: 12px 24px; border-radius: 12px;
-            border: 1px solid rgba(0, 240, 255, 0.4); backdrop-filter: blur(12px);
-            box-shadow: 0 0 25px rgba(0, 240, 255, 0.2);
-        }
-        input {
-            background: #060911; color: #00f0ff; border: 1px solid #1e293b;
-            padding: 10px 16px; border-radius: 6px; font-size: 16px; outline: none;
-            text-transform: uppercase; font-weight: bold; letter-spacing: 1px;
-            box-shadow: inset 0 0 10px rgba(0,0,0,0.8);
-        }
-        button {
-            background: linear-gradient(135deg, #00f0ff, #ff0055); color: #fff;
-            font-weight: 900; border: none; padding: 10px 24px; border-radius: 6px;
-            cursor: pointer; transition: all 0.2s ease; text-shadow: 0 0 8px #000;
-            box-shadow: 0 0 15px rgba(255, 0, 85, 0.4);
-        }
-        button:hover { transform: scale(1.05); filter: brightness(1.2); }
-        #scoreboard {
-            position: absolute; top: 20px; right: 20px; z-index: 90;
-            background: rgba(8, 12, 22, 0.85); border: 1px solid rgba(255, 255, 255, 0.15);
-            padding: 15px 20px; border-radius: 10px; min-width: 200px;
-            backdrop-filter: blur(10px); box-shadow: 0 0 20px rgba(0,0,0,0.6);
-        }
-        .score-row { display: flex; justify-content: space-between; font-weight: bold; margin-top: 6px; letter-spacing: 0.5px; }
-        #crosshair {
-            position: absolute; width: 28px; height: 28px; border: 2px solid #00f0ff;
-            border-radius: 50%; pointer-events: none; transform: translate(-50%, -50%);
-            z-index: 200; box-shadow: 0 0 15px #00f0ff, inset 0 0 10px #00f0ff;
-            display: flex; align-items: center; justify-content: center;
-        }
-        #crosshair::after { content: ''; width: 4px; height: 4px; background: #ff0055; border-radius: 50%; }
-        canvas { display: block; width: 100vw; height: 100vh; cursor: none; }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Fake Artist - Online Multiplayer</title>
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card: #1e293b;
+      --accent: #6366f1;
+      --danger: #ef4444;
+      --text: #f8fafc;
+      --subtext: #94a3b8;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
+    body { background: var(--bg); color: var(--text); display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 1rem; }
+
+    .container { background: var(--card); width: 100%; max-width: 850px; border-radius: 12px; padding: 1.5rem; position: relative; }
+    .screen { display: none; flex-direction: column; gap: 1rem; }
+    .screen.active { display: flex; }
+
+    input, button { padding: 0.75rem; border-radius: 6px; border: none; font-size: 1rem; }
+    input { background: #334155; color: var(--text); border: 1px solid #475569; }
+    button { background: var(--accent); color: white; cursor: pointer; font-weight: bold; }
+    button.secondary { background: #475569; }
+
+    .player-badge { background: #334155; padding: 0.5rem 1rem; border-radius: 6px; display: flex; justify-content: space-between; margin-bottom: 0.5rem; }
+    
+    .canvas-wrapper { position: relative; border: 2px solid #475569; border-radius: 8px; overflow: hidden; background: #fff; width: 100%; display: flex; justify-content: center; }
+    canvas { display: block; cursor: crosshair; }
+
+    .toast { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); background: var(--danger); color: white; padding: 0.4rem 1rem; border-radius: 20px; font-weight: bold; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
+    .toast.show { opacity: 1; }
+    .flash-error { animation: flash 0.4s ease; }
+    @keyframes flash { 50% { border-color: var(--danger); box-shadow: 0 0 15px var(--danger); } }
+
+    .vote-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 1rem; }
+    .role-banner { font-size: 1.2rem; font-weight: bold; text-align: center; padding: 0.5rem; border-radius: 6px; background: #334155; }
+  </style>
 </head>
 <body>
 
-<div id="crosshair"></div>
-<div id="ui-overlay">
-    <input type="text" id="roomInput" placeholder="ROOM CODE" value="NEON1" />
-    <button onclick="joinRoom()">LAUNCH ARENA</button>
+<div class="container">
+
+  <!-- LOBBY SCREEN -->
+  <div id="lobby-screen" class="screen active">
+    <h1 style="text-align: center;">Fake Artist Online</h1>
+    <div style="display: flex; gap: 0.5rem;">
+      <input type="text" id="player-name" placeholder="Your Name" style="flex:1;" />
+      <input type="text" id="room-id" placeholder="Room Code" style="width: 120px;" value="ROOM1" />
+      <button id="join-btn">Join Game</button>
+    </div>
+
+    <div id="lobby-waiting" style="display: none; flex-direction: column; gap: 1rem;">
+      <h3>Players in Room:</h3>
+      <div id="player-list"></div>
+      <button id="start-btn" style="display: none;">Start Game (Min 3 Players)</button>
+    </div>
+  </div>
+
+  <!-- GAMEPLAY SCREEN -->
+  <div id="game-screen" class="screen">
+    <div class="role-banner" id="role-banner">Secret Word: Loading...</div>
+    <div style="text-align: center; font-size: 1.1rem; color: #38bdf8;" id="turn-indicator">Waiting for turn...</div>
+
+    <div class="canvas-wrapper" id="canvas-wrapper">
+      <div id="toast" class="toast">Line too short! Min length is 50px.</div>
+      <canvas id="paint-canvas" width="700" height="450"></canvas>
+    </div>
+
+    <div style="display: flex; gap: 1rem; justify-content: center; background: #334155; padding: 0.5rem; border-radius: 6px;">
+      <label>Color: <input type="color" id="stroke-color" value="#ef4444" /></label>
+      <label>Size: <input type="range" id="stroke-width" min="2" max="20" value="6" /></label>
+    </div>
+  </div>
+
+  <!-- VOTING SCREEN -->
+  <div id="vote-screen" class="screen">
+    <h2 style="text-align: center;">Voting Session</h2>
+    <p style="text-align: center; color: var(--subtext);" id="vote-status">Vote for the Imposter!</p>
+    <div class="vote-grid" id="vote-grid"></div>
+  </div>
+
+  <!-- GAME OVER SCREEN -->
+  <div id="gameover-screen" class="screen" style="text-align: center;">
+    <h1 id="gameover-title">Game Over</h1>
+    <p id="gameover-msg" style="font-size: 1.2rem; margin: 1rem 0;"></p>
+    <button onclick="location.reload()">Return to Lobby</button>
+  </div>
+
 </div>
 
-<div id="scoreboard">
-    <div style="font-weight: 800; border-bottom: 1px solid #333; padding-bottom: 5px; color: #00f0ff; letter-spacing: 1px;">PILOT LEADERBOARD</div>
-    <div id="scores"></div>
-</div>
-
-<canvas id="gameCanvas"></canvas>
-
-<script src="/socket.io/socket.io.js"></script>
 <script>
-    // --- Web Audio Synthesizer (No external sound files required) ---
-    class SoundEngine {
-        constructor() {
-            this.ctx = null;
-        }
-        init() {
-            if (!this.ctx) {
-                this.ctx = new (window.AudioContext || window.webkitAudioContext)();
-            }
-        }
-        playLaser() {
-            if (!this.ctx) return;
-            const osc = this.ctx.createOscillator();
-            const gain = this.ctx.createGain();
-            osc.type = 'sawtooth';
-            osc.frequency.setValueAtTime(880, this.ctx.currentTime);
-            osc.frequency.exponentialRampToValueAtTime(110, this.ctx.currentTime + 0.12);
-            gain.gain.setValueAtTime(0.2, this.ctx.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.12);
-            osc.connect(gain); gain.connect(this.ctx.destination);
-            osc.start(); osc.stop(this.ctx.currentTime + 0.12);
-        }
-        playHit() {
-            if (!this.ctx) return;
-            const osc = this.ctx.createOscillator();
-            const gain = this.ctx.createGain();
-            osc.type = 'square';
-            osc.frequency.setValueAtTime(220, this.ctx.currentTime);
-            osc.frequency.exponentialRampToValueAtTime(40, this.ctx.currentTime + 0.08);
-            gain.gain.setValueAtTime(0.25, this.ctx.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.08);
-            osc.connect(gain); gain.connect(this.ctx.destination);
-            osc.start(); osc.stop(this.ctx.currentTime + 0.08);
-        }
-        playExplosion() {
-            if (!this.ctx) return;
-            const bufferSize = this.ctx.sampleRate * 0.4;
-            const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
-            const data = buffer.getChannelData(0);
-            for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+  // Replace window.location.origin with your Render Backend URL if hosted separately
+  const socket = io(window.location.origin);
 
-            const noise = this.ctx.createBufferSource();
-            noise.buffer = buffer;
-            const filter = this.ctx.createBiquadFilter();
-            filter.type = 'lowpass';
-            filter.frequency.setValueAtTime(800, this.ctx.currentTime);
-            filter.frequency.linearRampToValueAtTime(50, this.ctx.currentTime + 0.4);
+  let myId = null;
+  let currentTurnPlayerId = null;
+  let isDrawing = false;
+  let strokePoints = [];
+  const MIN_LINE_LENGTH = 50;
 
-            const gain = this.ctx.createGain();
-            gain.gain.setValueAtTime(0.4, this.ctx.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.4);
+  // DOM Elements
+  const lobbyScreen = document.getElementById('lobby-screen');
+  const gameScreen = document.getElementById('game-screen');
+  const voteScreen = document.getElementById('vote-screen');
+  const gameoverScreen = document.getElementById('gameover-screen');
 
-            noise.connect(filter); filter.connect(gain); gain.connect(this.ctx.destination);
-            noise.start();
-        }
-        playPowerup() {
-            if (!this.ctx) return;
-            const osc = this.ctx.createOscillator();
-            const gain = this.ctx.createGain();
-            osc.type = 'sine';
-            osc.frequency.setValueAtTime(300, this.ctx.currentTime);
-            osc.frequency.exponentialRampToValueAtTime(1200, this.ctx.currentTime + 0.25);
-            gain.gain.setValueAtTime(0.25, this.ctx.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.25);
-            osc.connect(gain); gain.connect(this.ctx.destination);
-            osc.start(); osc.stop(this.ctx.currentTime + 0.25);
-        }
-    }
+  const canvas = document.getElementById('paint-canvas');
+  const ctx = canvas.getContext('2d');
+  const canvasWrapper = document.getElementById('canvas-wrapper');
+  const toast = document.getElementById('toast');
 
-    const audio = new SoundEngine();
-    const socket = io(window.location.origin, { transports: ['websocket', 'polling'] });
-    const canvas = document.getElementById('gameCanvas');
-    const ctx = canvas.getContext('2d');
-    const crosshair = document.getElementById('crosshair');
+  socket.on('connect', () => { myId = socket.id; });
 
-    let myId = null;
-    let localPlayer = { x: 0, y: 0, angle: 0 };
-    let inputSequence = 0;
-    let pendingInputs = [];
+  // --- LOBBY ACTIONS ---
+  document.getElementById('join-btn').onclick = () => {
+    const playerName = document.getElementById('player-name').value.trim();
+    const roomId = document.getElementById('room-id').value.trim();
+    if (!playerName || !roomId) return;
 
-    let stateBuffer = [];
-    const INTERPOLATION_OFFSET_MS = 50;
+    socket.emit('join_room', { roomId, playerName });
+    document.getElementById('lobby-waiting').style.display = 'flex';
+  };
 
-    let localBullets = {};
-    let powerups = [];
-    let obstacles = [];
-    let particles = [];
-    let keys = {};
-    let mouse = { x: 0, y: 0 };
-    let screenShake = 0;
+  document.getElementById('start-btn').onclick = () => {
+    socket.emit('start_game');
+  };
 
-    function resizeCanvas() {
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
-    }
-    window.addEventListener('resize', resizeCanvas);
-    resizeCanvas();
-
-    window.addEventListener('keydown', e => {
-        audio.init();
-        keys[e.key.toLowerCase()] = true;
-    });
-    window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
-    window.addEventListener('mousemove', e => {
-        mouse.x = e.clientX;
-        mouse.y = e.clientY;
-        crosshair.style.left = `${e.clientX}px`;
-        crosshair.style.top = `${e.clientY}px`;
+  socket.on('room_updated', (room) => {
+    const list = document.getElementById('player-list');
+    list.innerHTML = '';
+    room.players.forEach(p => {
+      list.innerHTML += `<div class="player-badge"><span>${p.name}</span></div>`;
     });
 
-    window.addEventListener('mousedown', () => {
-        audio.init();
-        const latestState = getLatestServerPlayerState(myId);
-        if (!myId || !latestState || latestState.hp <= 0) return;
+    // Room Host control (first joined player controls start button)
+    const isHost = room.players[0] && room.players[0].id === myId;
+    const startBtn = document.getElementById('start-btn');
+    startBtn.style.display = isHost ? 'block' : 'none';
+    startBtn.disabled = room.players.length < 3;
+  });
 
-        const angle = Math.atan2(mouse.y - localPlayer.y, mouse.x - localPlayer.x);
-        const speed = 24;
-        const isTriple = latestState.tripleTimer > Date.now();
+  // --- ROLE & GAME START ---
+  socket.on('role_assignment', ({ role, word }) => {
+    const banner = document.getElementById('role-banner');
+    if (role === 'IMPOSTER') {
+      banner.innerText = "You are the IMPOSTER! Try to blend in.";
+      banner.style.color = "var(--danger)";
+    } else {
+      banner.innerText = `Secret Word: ${word}`;
+      banner.style.color = "#38bdf8";
+    }
+  });
 
-        const angles = isTriple ? [angle - 0.2, angle, angle + 0.2] : [angle];
+  socket.on('game_started', (roomState) => {
+    lobbyScreen.classList.remove('active');
+    gameScreen.classList.add('active');
 
-        angles.forEach(a => {
-            const bulletId = Math.random().toString(36).substr(2, 9);
-            const bulletData = {
-                id: bulletId,
-                owner: myId,
-                x: localPlayer.x + Math.cos(a) * 32,
-                y: localPlayer.y + Math.sin(a) * 32,
-                vx: Math.cos(a) * speed,
-                vy: Math.sin(a) * speed,
-                color: latestState.color,
-                life: 80
-            };
+    // Clear canvas
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-            localBullets[bulletId] = bulletData;
-            socket.emit('spawnBullet', bulletData);
-        });
+    updateTurnUI(roomState.currentTurnPlayerId);
+  });
 
-        audio.playLaser();
-        screenShake = 4;
+  socket.on('turn_changed', ({ currentTurnPlayerId, currentTurnName }) => {
+    updateTurnUI(currentTurnPlayerId, currentTurnName);
+  });
+
+  function updateTurnUI(playerId, playerName) {
+    currentTurnPlayerId = playerId;
+    const indicator = document.getElementById('turn-indicator');
+    if (playerId === myId) {
+      indicator.innerText = "YOUR TURN! Draw one line.";
+      indicator.style.color = "#22c55e";
+    } else {
+      indicator.innerText = `${playerName || 'Another player'}'s turn to draw...`;
+      indicator.style.color = "#38bdf8";
+    }
+  }
+
+  // --- CANVAS DRAWING ---
+  canvas.addEventListener('mousedown', (e) => {
+    if (currentTurnPlayerId !== myId) return;
+    isDrawing = true;
+    strokePoints = [getCoords(e)];
+    ctx.beginPath();
+    ctx.strokeStyle = document.getElementById('stroke-color').value;
+    ctx.lineWidth = document.getElementById('stroke-width').value;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.moveTo(strokePoints[0].x, strokePoints[0].y);
+  });
+
+  canvas.addEventListener('mousemove', (e) => {
+    if (!isDrawing) return;
+    const pt = getCoords(e);
+    strokePoints.push(pt);
+    ctx.lineTo(pt.x, pt.y);
+    ctx.stroke();
+  });
+
+  canvas.addEventListener('mouseup', endStroke);
+  canvas.addEventListener('mouseleave', endStroke);
+
+  function getCoords(e) {
+    const rect = canvas.getBoundingClientRect();
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  }
+
+  function endStroke() {
+    if (!isDrawing) return;
+    isDrawing = false;
+
+    // Length check
+    let length = 0;
+    for (let i = 1; i < strokePoints.length; i++) {
+      const dx = strokePoints[i].x - strokePoints[i - 1].x;
+      const dy = strokePoints[i].y - strokePoints[i - 1].y;
+      length += Math.sqrt(dx * dx + dy * dy);
+    }
+
+    if (length < MIN_LINE_LENGTH) {
+      // Invalid stroke: reset canvas visually and alert
+      canvasWrapper.classList.add('flash-error');
+      toast.classList.add('show');
+      setTimeout(() => {
+        canvasWrapper.classList.remove('flash-error');
+        toast.classList.remove('show');
+      }, 1200);
+    } else {
+      // Emit valid stroke to server
+      socket.emit('submit_stroke', {
+        points: strokePoints,
+        color: document.getElementById('stroke-color').value,
+        width: document.getElementById('stroke-width').value
+      });
+    }
+  }
+
+  // Sync Stroke from other players
+  socket.on('draw_stroke', (data) => {
+    ctx.beginPath();
+    ctx.strokeStyle = data.color;
+    ctx.lineWidth = data.width;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.moveTo(data.points[0].x, data.points[0].y);
+
+    for (let i = 1; i < data.points.length; i++) {
+      ctx.lineTo(data.points[i].x, data.points[i].y);
+    }
+    ctx.stroke();
+  });
+
+  // --- VOTING PHASE ---
+  socket.on('start_voting', ({ alivePlayers }) => {
+    gameScreen.classList.remove('active');
+    voteScreen.classList.add('active');
+
+    const grid = document.getElementById('vote-grid');
+    grid.innerHTML = '';
+
+    alivePlayers.forEach(p => {
+      if (p.id !== myId) {
+        const btn = document.createElement('button');
+        btn.innerText = `Vote ${p.name}`;
+        btn.onclick = () => castVote(p.id);
+        grid.appendChild(btn);
+      }
     });
 
-    function joinRoom() {
-        audio.init();
-        const room = document.getElementById('roomInput').value.trim().toUpperCase();
-        if (room) socket.emit('joinGame', room);
-    }
+    const skipBtn = document.createElement('button');
+    skipBtn.className = 'secondary';
+    skipBtn.innerText = 'Skip Vote';
+    skipBtn.onclick = () => castVote('SKIP');
+    grid.appendChild(skipBtn);
+  });
 
-    socket.on('initPlayer', (data) => myId = data.id);
+  function castVote(targetId) {
+    socket.emit('submit_vote', { targetId });
+    document.getElementById('vote-grid').innerHTML = '<p style="text-align:center;">Vote submitted. Waiting for other players...</p>';
+  }
 
-    socket.on('roomState', (data) => {
-        obstacles = data.obstacles || [];
-    });
+  socket.on('vote_progress', ({ votedCount, totalCount }) => {
+    document.getElementById('vote-status').innerText = `Votes gathered: ${votedCount} / ${totalCount}`;
+  });
 
-    socket.on('respawnPlayer', (data) => {
-        if (data.id === myId) {
-            localPlayer.x = data.x;
-            localPlayer.y = data.y;
-            pendingInputs = [];
-        }
-    });
+  socket.on('vote_result', ({ message }) => {
+    alert(message);
+  });
 
-    socket.on('powerupCollected', () => {
-        audio.playPowerup();
-    });
+  socket.on('next_round', ({ currentTurnPlayerId, currentTurnName }) => {
+    voteScreen.classList.remove('active');
+    gameScreen.classList.add('active');
+    updateTurnUI(currentTurnPlayerId, currentTurnName);
+  });
 
-    socket.on('playerDestroyed', (data) => {
-        audio.playExplosion();
-        screenShake = 18;
-        for (let i = 0; i < 35; i++) {
-            particles.push({
-                x: data.x, y: data.y,
-                vx: (Math.random() - 0.5) * 12, vy: (Math.random() - 0.5) * 12,
-                life: 30, color: data.color, size: 4 + Math.random() * 4
-            });
-        }
-    });
+  socket.on('game_over', ({ winner, message }) => {
+    voteScreen.classList.remove('active');
+    gameScreen.classList.remove('active');
+    gameoverScreen.classList.add('active');
 
-    socket.on('impactEvent', (data) => {
-        delete localBullets[data.id];
-        audio.playHit();
-        screenShake = 7;
-        for (let i = 0; i < 12; i++) {
-            particles.push({
-                x: data.x, y: data.y,
-                vx: (Math.random() - 0.5) * 8, vy: (Math.random() - 0.5) * 8,
-                life: 18, color: data.color, size: 2 + Math.random() * 3
-            });
-        }
-    });
-
-    socket.on('serverState', (data) => {
-        stateBuffer.push(data);
-        if (stateBuffer.length > 20) stateBuffer.shift();
-
-        powerups = data.powerups;
-        obstacles = data.obstacles;
-
-        const serverMe = data.players[myId];
-        if (serverMe) {
-            localPlayer.x = serverMe.x;
-            localPlayer.y = serverMe.y;
-            pendingInputs = pendingInputs.filter(input => input.seq > serverMe.lastProcessedSeq);
-            pendingInputs.forEach(input => applyInputToLocalPlayer(input));
-        }
-
-        Object.keys(data.bullets).forEach(id => {
-            const b = data.bullets[id];
-            if (b.owner !== myId) {
-                localBullets[id] = { ...b };
-            }
-        });
-
-        updateScoreboard(data.players);
-    });
-
-    function applyInputToLocalPlayer(input) {
-        const latestState = getLatestServerPlayerState(myId);
-        let speed = (latestState && latestState.speedTimer > Date.now()) ? 9.5 : 6;
-
-        let nextX = localPlayer.x;
-        let nextY = localPlayer.y;
-
-        if (input.up) nextY -= speed;
-        if (input.down) nextY += speed;
-        if (input.left) nextX -= speed;
-        if (input.right) nextX += speed;
-
-        obstacles.forEach(obs => {
-            if (obs.hp > 0) {
-                const dist = Math.hypot(nextX - obs.x, nextY - obs.y);
-                if (dist < obs.r + 20) {
-                    const angle = Math.atan2(nextY - obs.y, nextX - obs.x);
-                    nextX = obs.x + Math.cos(angle) * (obs.r + 20);
-                    nextY = obs.y + Math.sin(angle) * (obs.r + 20);
-                }
-            }
-        });
-
-        localPlayer.x = Math.max(30, Math.min(2000, nextX));
-        localPlayer.y = Math.max(30, Math.min(1200, nextY));
-        localPlayer.angle = input.angle;
-    }
-
-    function processLocalMovement() {
-        const latestState = getLatestServerPlayerState(myId);
-        if (!myId || !latestState || latestState.hp <= 0) return;
-
-        inputSequence++;
-        const isMoving = keys['w'] || keys['s'] || keys['a'] || keys['d'] || keys['arrowup'] || keys['arrowdown'] || keys['arrowleft'] || keys['arrowright'];
-
-        const input = {
-            seq: inputSequence,
-            up: keys['w'] || keys['arrowup'],
-            down: keys['s'] || keys['arrowdown'],
-            left: keys['a'] || keys['arrowleft'],
-            right: keys['d'] || keys['arrowright'],
-            angle: Math.atan2(mouse.y - localPlayer.y, mouse.x - localPlayer.x)
-        };
-
-        applyInputToLocalPlayer(input);
-        pendingInputs.push(input);
-        socket.emit('playerInput', input);
-
-        if (isMoving && Math.random() < 0.6) {
-            particles.push({
-                x: localPlayer.x - Math.cos(localPlayer.angle) * 20,
-                y: localPlayer.y - Math.sin(localPlayer.angle) * 20,
-                vx: -Math.cos(localPlayer.angle) * 3 + (Math.random() - 0.5) * 2,
-                vy: -Math.sin(localPlayer.angle) * 3 + (Math.random() - 0.5) * 2,
-                life: 14, color: '#00f0ff', size: 3
-            });
-        }
-    }
-
-    function getInterpolatedOpponent(id, renderTime) {
-        if (stateBuffer.length < 2) return null;
-
-        for (let i = stateBuffer.length - 1; i >= 1; i--) {
-            const curr = stateBuffer[i];
-            const prev = stateBuffer[i - 1];
-
-            if (prev.timestamp <= renderTime && renderTime <= curr.timestamp) {
-                const p0 = prev.players[id];
-                const p1 = curr.players[id];
-                if (!p0 || !p1) return p1 || p0;
-
-                const ratio = (renderTime - prev.timestamp) / (curr.timestamp - prev.timestamp);
-                return {
-                    ...p1,
-                    x: p0.x + (p1.x - p0.x) * ratio,
-                    y: p0.y + (p1.y - p0.y) * ratio,
-                    angle: p0.angle + (p1.angle - p0.angle) * ratio
-                };
-            }
-        }
-        return stateBuffer[stateBuffer.length - 1].players[id];
-    }
-
-    function getLatestServerPlayerState(id) {
-        if (stateBuffer.length === 0) return null;
-        return stateBuffer[stateBuffer.length - 1].players[id];
-    }
-
-    function drawSpaceship(x, y, angle, color, hp, shieldActive, speedActive) {
-        ctx.save();
-        ctx.translate(x, y);
-        ctx.rotate(angle);
-
-        ctx.fillStyle = speedActive ? '#00f0ff' : '#ff5500';
-        ctx.shadowColor = speedActive ? '#00f0ff' : '#ff5500';
-        ctx.shadowBlur = 15;
-        ctx.beginPath();
-        ctx.moveTo(-20, -6); ctx.lineTo(-32 - Math.random() * 12, 0); ctx.lineTo(-20, 6);
-        ctx.fill();
-
-        ctx.fillStyle = color;
-        ctx.shadowColor = color;
-        ctx.shadowBlur = 18;
-
-        ctx.beginPath();
-        ctx.moveTo(24, 0); ctx.lineTo(-18, -18); ctx.lineTo(-10, 0); ctx.lineTo(-18, 18);
-        ctx.closePath();
-        ctx.fill();
-
-        ctx.restore();
-
-        if (shieldActive) {
-            ctx.strokeStyle = '#00f0ff';
-            ctx.shadowColor = '#00f0ff';
-            ctx.shadowBlur = 20;
-            ctx.lineWidth = 3;
-            ctx.beginPath();
-            ctx.arc(x, y, 32, 0, Math.PI * 2);
-            ctx.stroke();
-        }
-
-        if (hp > 0) {
-            ctx.fillStyle = 'rgba(0,0,0,0.6)';
-            ctx.fillRect(x - 26, y - 36, 52, 6);
-            ctx.fillStyle = color;
-            ctx.shadowColor = color;
-            ctx.shadowBlur = 8;
-            ctx.fillRect(x - 25, y - 35, (hp / 100) * 50, 4);
-        }
-    }
-
-    function updateLocalBullets() {
-        const renderTime = Date.now() - INTERPOLATION_OFFSET_MS;
-
-        Object.keys(localBullets).forEach(id => {
-            const b = localBullets[id];
-            b.x += b.vx;
-            b.y += b.vy;
-            b.life--;
-
-            // Instant Local Client Hit Detection Prediction
-            if (b.owner === myId) {
-                // Obstacles
-                obstacles.forEach(obs => {
-                    if (obs.hp > 0 && Math.hypot(obs.x - b.x, obs.y - b.y) < obs.r) {
-                        triggerLocalImpact(b, '#00f0ff');
-                    }
-                });
-
-                // Opponents
-                const latestSnapshot = stateBuffer.length > 0 ? stateBuffer[stateBuffer.length - 1] : null;
-                if (latestSnapshot) {
-                    Object.keys(latestSnapshot.players).forEach(pId => {
-                        if (pId !== myId) {
-                            const opp = getInterpolatedOpponent(pId, renderTime);
-                            if (opp && opp.hp > 0 && Math.hypot(opp.x - b.x, opp.y - b.y) < 28) {
-                                triggerLocalImpact(b, opp.color);
-                            }
-                        }
-                    });
-                }
-            }
-
-            if (b.life <= 0) delete localBullets[id];
-        });
-    }
-
-    function triggerLocalImpact(bullet, color) {
-        audio.playHit();
-        screenShake = 6;
-        for (let i = 0; i < 10; i++) {
-            particles.push({
-                x: bullet.x, y: bullet.y,
-                vx: (Math.random() - 0.5) * 8, vy: (Math.random() - 0.5) * 8,
-                life: 15, color: color, size: 3
-            });
-        }
-        delete localBullets[bullet.id];
-    }
-
-    function render() {
-        ctx.save();
-        if (screenShake > 0) {
-            ctx.translate((Math.random() - 0.5) * screenShake, (Math.random() - 0.5) * screenShake);
-            screenShake *= 0.88;
-        }
-
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-        // Grid Background with Pulsing Bloom
-        ctx.strokeStyle = 'rgba(0, 240, 255, 0.08)';
-        ctx.lineWidth = 1;
-        for (let x = 0; x < canvas.width; x += 60) {
-            ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
-        }
-        for (let y = 0; y < canvas.height; y += 60) {
-            ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
-        }
-
-        // Obstacles
-        obstacles.forEach(obs => {
-            if (obs.hp > 0) {
-                ctx.fillStyle = '#0b1329';
-                ctx.strokeStyle = '#00f0ff';
-                ctx.shadowColor = '#00f0ff';
-                ctx.shadowBlur = 15;
-                ctx.lineWidth = 3;
-                ctx.beginPath();
-                ctx.arc(obs.x, obs.y, obs.r, 0, Math.PI * 2);
-                ctx.fill();
-                ctx.stroke();
-
-                ctx.fillStyle = 'rgba(0,0,0,0.6)';
-                ctx.fillRect(obs.x - 22, obs.y - obs.r - 14, 44, 5);
-                ctx.fillStyle = '#ff0055';
-                ctx.fillRect(obs.x - 21, obs.y - obs.r - 13, (obs.hp / obs.maxHp) * 42, 3);
-            }
-        });
-
-        // Power-Ups
-        powerups.forEach(p => {
-            const col = p.type === 'TRIPLE' ? '#ffcc00' : p.type === 'SPEED' ? '#00ff66' : '#00f0ff';
-            ctx.fillStyle = col;
-            ctx.shadowColor = col;
-            ctx.shadowBlur = 20;
-            ctx.beginPath(); ctx.arc(p.x, p.y, 14, 0, Math.PI * 2); ctx.fill();
-        });
-
-        // Particles
-        particles.forEach((part, i) => {
-            part.x += part.vx; part.y += part.vy; part.life--;
-            ctx.fillStyle = part.color;
-            ctx.shadowColor = part.color;
-            ctx.shadowBlur = 10;
-            ctx.beginPath(); ctx.arc(part.x, part.y, part.size || 3, 0, Math.PI * 2); ctx.fill();
-            if (part.life <= 0) particles.splice(i, 1);
-        });
-
-        // Bullets
-        Object.values(localBullets).forEach(b => {
-            ctx.fillStyle = b.color;
-            ctx.shadowColor = b.color;
-            ctx.shadowBlur = 15;
-            ctx.beginPath(); ctx.arc(b.x, b.y, 6, 0, Math.PI * 2); ctx.fill();
-        });
-
-        // Render Opponents
-        const renderTime = Date.now() - INTERPOLATION_OFFSET_MS;
-        const latestSnapshot = stateBuffer.length > 0 ? stateBuffer[stateBuffer.length - 1] : null;
-
-        if (latestSnapshot) {
-            Object.keys(latestSnapshot.players).forEach(id => {
-                if (id !== myId) {
-                    const interpolatedOpponent = getInterpolatedOpponent(id, renderTime);
-                    if (interpolatedOpponent && interpolatedOpponent.hp > 0) {
-                        drawSpaceship(
-                            interpolatedOpponent.x,
-                            interpolatedOpponent.y,
-                            interpolatedOpponent.angle,
-                            interpolatedOpponent.color,
-                            interpolatedOpponent.hp,
-                            interpolatedOpponent.shieldTimer > Date.now(),
-                            interpolatedOpponent.speedTimer > Date.now()
-                        );
-                    }
-                }
-            });
-        }
-
-        // Render Local Ship
-        const localState = getLatestServerPlayerState(myId);
-        if (myId && localState && localState.hp > 0) {
-            drawSpaceship(
-                localPlayer.x,
-                localPlayer.y,
-                localPlayer.angle,
-                localState.color,
-                localState.hp,
-                localState.shieldTimer > Date.now(),
-                localState.speedTimer > Date.now()
-            );
-        }
-
-        ctx.restore();
-    }
-
-    function updateScoreboard(players) {
-        if (!players) return;
-        const container = document.getElementById('scores');
-        container.innerHTML = '';
-        Object.values(players).forEach((p, idx) => {
-            const row = document.createElement('div');
-            row.className = 'score-row';
-            row.style.color = p.color;
-            row.innerHTML = `<span>PILOT ${idx + 1}</span> <span>${p.kills} K / ${p.deaths} D</span>`;
-            container.appendChild(row);
-        });
-    }
-
-    function loop() {
-        processLocalMovement();
-        updateLocalBullets();
-        render();
-        requestAnimationFrame(loop);
-    }
-
-    requestAnimationFrame(loop);
+    const title = document.getElementById('gameover-title');
+    title.innerText = winner === 'IMPOSTER' ? 'Imposter Wins!' : 'Artists Win!';
+    title.style.color = winner === 'IMPOSTER' ? 'var(--danger)' : '#38bdf8';
+    document.getElementById('gameover-msg').innerText = message;
+  });
 </script>
+
 </body>
 </html>
