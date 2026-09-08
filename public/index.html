@@ -19,7 +19,7 @@
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
     body { background: var(--bg); color: var(--text); display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 1rem; overflow-x: hidden; }
 
-    .container { background: var(--card); width: 100%; max-width: 1380px; border-radius: 12px; padding: 1.5rem; position: relative; }
+    .container { background: var(--card); width: 100%; max-width: 1540px; border-radius: 12px; padding: 1.5rem; position: relative; }
     .screen { display: none; flex-direction: column; gap: 1rem; }
     .screen.active { display: flex; }
 
@@ -30,17 +30,16 @@
     button.secondary { background: #475569; }
     button.danger { background: var(--danger); }
 
-    /* Expanded Gameplay Layout */
     .gameplay-layout { display: flex; gap: 1.5rem; width: 100%; }
     .canvas-section { flex: 1; display: flex; flex-direction: column; gap: 1rem; }
-    .sidebar { width: 260px; background: #0f172a; border-radius: 8px; padding: 1rem; display: flex; flex-direction: column; gap: 0.75rem; border: 1px solid #334155; }
+    .sidebar { width: 280px; background: #0f172a; border-radius: 8px; padding: 1rem; display: flex; flex-direction: column; gap: 0.75rem; border: 1px solid #334155; }
     
     .sidebar-player { padding: 0.6rem 0.8rem; border-radius: 6px; background: #1e293b; display: flex; align-items: center; justify-content: space-between; font-weight: 500; font-size: 0.95rem; border-left: 4px solid transparent; }
     .sidebar-player.turn { border-left-color: var(--success); background: #334155; color: #38bdf8; font-weight: bold; }
     .sidebar-player.dead { opacity: 0.4; text-decoration: line-through; background: #0f172a; border-left-color: var(--danger); }
     .sidebar-player .imposter-badge { background: var(--danger); color: white; font-size: 0.7rem; padding: 2px 6px; border-radius: 4px; text-decoration: none; font-weight: bold; }
 
-    /* Enlarged Paper Canvas */
+    /* Enlarged Paper Canvas (1200x700) */
     .canvas-wrapper { position: relative; border: 3px solid #475569; border-radius: 8px; overflow: hidden; background: #ffffff; width: 100%; display: flex; justify-content: center; transition: border-color 0.3s, box-shadow 0.3s; }
     .canvas-wrapper.your-turn { border-color: var(--success); box-shadow: 0 0 25px rgba(34, 197, 94, 0.4); }
     canvas#paint-canvas { display: block; cursor: none; }
@@ -58,7 +57,6 @@
     .flash-error { animation: flash 0.4s ease; }
     @keyframes flash { 50% { border-color: var(--danger); box-shadow: 0 0 20px var(--danger); } }
 
-    /* Exactly 20 Color Options Grid (10 Columns x 2 Rows) */
     .color-grid { display: grid; grid-template-columns: repeat(10, 1fr); gap: 6px; }
     .color-btn { width: 30px; height: 30px; border-radius: 50%; border: 2px solid #475569; cursor: pointer; padding: 0; transition: transform 0.1s; }
     .color-btn.selected { border-color: #ffffff; transform: scale(1.2); box-shadow: 0 0 8px rgba(255,255,255,0.8); }
@@ -73,9 +71,8 @@
     .countdown-widget { position: absolute; bottom: 15px; right: 15px; background: rgba(15,23,42,0.85); padding: 0.5rem 1rem; border-radius: 20px; border: 1px solid #475569; font-weight: bold; font-size: 0.9rem; }
     .reveal-card { background: #334155; padding: 2rem; border-radius: 12px; display: flex; flex-direction: column; gap: 1rem; align-items: center; margin: 1rem 0; border: 2px solid #475569; }
 
-    /* Canvas Drawing Preview Card for Voting Room */
     .canvas-preview-container { text-align: center; margin-bottom: 0.5rem; background: #0f172a; padding: 1rem; border-radius: 8px; border: 1px solid #334155; }
-    .canvas-preview-container img { max-width: 100%; max-height: 260px; border-radius: 6px; border: 2px solid #475569; background: #ffffff; object-fit: contain; }
+    .canvas-preview-container img { max-width: 100%; max-height: 320px; border-radius: 6px; border: 2px solid #475569; background: #ffffff; object-fit: contain; }
   </style>
 </head>
 <body>
@@ -88,14 +85,12 @@
   <div id="lobby-screen" class="screen active">
     <h1 style="text-align: center;">Fake Artist Online</h1>
     
-    <!-- Join Section (Hidden when inside lobby) -->
     <div id="join-controls" style="display: flex; gap: 0.5rem;">
       <input type="text" id="player-name" placeholder="Your Name" style="flex:1;" />
       <input type="text" id="room-id" placeholder="Room Code" style="width: 120px;" value="ROOM1" />
       <button id="join-btn">Join Game</button>
     </div>
 
-    <!-- Active Lobby Info View -->
     <div id="lobby-waiting" style="display: none; flex-direction: column; gap: 1rem;">
       <div style="display: flex; justify-content: space-between; align-items: center;">
         <h3>Room: <span id="display-room-code" style="color: #38bdf8;"></span></h3>
@@ -121,18 +116,16 @@
     <div style="text-align: center; font-size: 1.1rem; color: #38bdf8;" id="turn-indicator">Waiting for turn...</div>
 
     <div class="gameplay-layout">
-      <!-- Enlarged Canvas Paper Section -->
+      <!-- Expanded Canvas Section (1200x700) -->
       <div class="canvas-section">
         <div class="canvas-wrapper" id="canvas-wrapper">
           <div id="toast" class="toast">Line too short! Min length is 45px.</div>
           <div id="cursor-dot"></div>
-          <canvas id="paint-canvas" width="1020" height="600"></canvas>
-          <canvas id="fx-canvas" width="1020" height="600"></canvas>
+          <canvas id="paint-canvas" width="1200" height="700"></canvas>
+          <canvas id="fx-canvas" width="1200" height="700"></canvas>
         </div>
 
-        <!-- Palette & Controls Bar -->
         <div style="display: flex; gap: 1.5rem; align-items: center; justify-content: space-between; background: #334155; padding: 0.75rem 1.2rem; border-radius: 8px;">
-          <!-- 20 Preset Colors -->
           <div>
             <span style="font-size: 0.85rem; color: var(--subtext); display: block; margin-bottom: 4px;">Colors (20 Options)</span>
             <div class="color-grid" id="color-grid"></div>
@@ -152,7 +145,6 @@
         </div>
       </div>
 
-      <!-- Right Hand Sidebar -->
       <div class="sidebar">
         <h3 style="font-size: 1rem; color: var(--subtext); text-align: center; border-bottom: 1px solid #334155; padding-bottom: 0.5rem;">Turn Order</h3>
         <div id="sidebar-players" style="display: flex; flex-direction: column; gap: 0.5rem;"></div>
@@ -171,7 +163,6 @@
   <div id="vote-screen" class="screen" style="position: relative;">
     <h2 style="text-align: center;">Voting Session</h2>
     
-    <!-- Drawing Preview in Voting Room -->
     <div class="canvas-preview-container">
       <p style="color: var(--subtext); font-size: 0.85rem; margin-bottom: 6px;">Drawing Preview:</p>
       <img id="drawing-preview-img" src="" alt="Completed Drawing Preview" />
@@ -199,7 +190,6 @@
 <script>
   const socket = io(window.location.origin);
 
-  // 20 Explicit Preset Colors (Including Black, White, and 3 Greys)
   const DEFAULT_COLORS = [
     '#000000', '#ffffff', '#475569', '#94a3b8', '#cbd5e1',
     '#ef4444', '#f97316', '#f59e0b', '#eab308', '#84cc16',
@@ -218,7 +208,6 @@
   let revealedImposterId = null;
   let revealedImposterName = null;
 
-  let intermissionInterval = null;
   let voteTimerInterval = null;
 
   // DOM Elements
@@ -247,7 +236,6 @@
   const strokeSizeSelect = document.getElementById('stroke-size-select');
   const drawingPreviewImg = document.getElementById('drawing-preview-img');
 
-  // Load Saved Name
   const savedName = localStorage.getItem('fake_artist_player_name');
   if (savedName) nameInput.value = savedName;
 
@@ -255,7 +243,6 @@
     localStorage.setItem('fake_artist_player_name', nameInput.value.trim());
   });
 
-  // Audio Synthesis
   const AudioContext = window.AudioContext || window.webkitAudioContext;
   let audioCtx = null;
 
@@ -307,7 +294,6 @@
   function playErrorSound() { initAudio(); playTone(180, 'sawtooth', 0.3, 0); }
   function playTurnSound() { initAudio(); playTone(440, 'triangle', 0.2, 0); }
 
-  // Brush Cursor Indicator
   function updateCursorDotSize() {
     const size = strokeSizeSelect.value;
     cursorDot.style.width = `${size}px`;
@@ -325,7 +311,6 @@
 
   strokeSizeSelect.addEventListener('change', updateCursorDotSize);
 
-  // Color Palette (20 Options)
   const colorGrid = document.getElementById('color-grid');
   DEFAULT_COLORS.forEach((color, index) => {
     const btn = document.createElement('button');
@@ -343,7 +328,6 @@
 
   socket.on('connect', () => { myId = socket.id; });
 
-  // Join & Leave Lobby Logic
   joinBtn.onclick = () => {
     initAudio();
     const playerName = nameInput.value.trim();
@@ -381,7 +365,6 @@
     startBtn.disabled = room.players.length < 3;
   });
 
-  // Game Assignment & Countdown
   socket.on('role_assignment', ({ role, word, imposterId }) => {
     isEliminated = false;
     revealedImposterId = imposterId;
@@ -473,7 +456,6 @@
     }
   }
 
-  // Drawing Handlers
   canvas.addEventListener('mousedown', (e) => {
     if (currentTurnPlayerId !== myId || isEliminated) return;
     initAudio();
@@ -602,9 +584,7 @@
     renderFX();
   }
 
-  // Intermission & Voting Screens
   socket.on('start_intermission', ({ delaySeconds }) => {
-    // Keep game screen active during the 5 second delay so everyone can inspect the complete canvas
     let count = delaySeconds || 5;
     showNotification(`Round Complete! Reviewing drawing... (${count}s)`);
 
@@ -622,7 +602,6 @@
     gameScreen.classList.remove('active');
     voteScreen.classList.add('active');
 
-    // Capture the finished drawing and display image preview inside the voting room
     drawingPreviewImg.src = canvas.toDataURL('image/png');
 
     const grid = document.getElementById('vote-grid');

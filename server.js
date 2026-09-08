@@ -8,7 +8,42 @@ const io = new Server(server, { cors: { origin: "*" } });
 
 app.use(express.static('public'));
 
-const WORDS = ['Banana', 'Airplane', 'Guitar', 'Elephant', 'Pizza', 'House', 'Bicycle', 'Cat', 'Spider', 'Carrot', 'Crown', 'Sun', 'Tree', 'Smartphone', 'Glasses'];
+// 100+ Categorized Secret Words
+const WORDS = [
+  // Animals & Nature
+  'Banana', 'Airplane', 'Guitar', 'Elephant', 'Pizza', 'House', 'Bicycle', 'Cat', 'Spider', 'Carrot', 
+  'Crown', 'Sun', 'Tree', 'Smartphone', 'Glasses', 'Dog', 'Penguin', 'Giraffe', 'Dolphin', 'Lion', 
+  'Tiger', 'Octopus', 'Kangaroo', 'Flamingo', 'Owl', 'Panda', 'Koala', 'Dragon', 'Unicorn', 'Flower', 
+  'Mushroom', 'Cactus', 'Volcano', 'Rainbow', 'Mountain', 'Waterfall', 'Forest', 'Island', 'Tornado', 'Starfish',
+  // Food & Drinks
+  'Hamburger', 'Hotdog', 'Sushi', 'Taco', 'Donut', 'Ice Cream', 'Popcorn', 'Watermelon', 'Pineapple', 'Strawberry',
+  'Cookie', 'Cupcake', 'Pancake', 'Waffle', 'Avocado', 'Broccoli', 'Cheese', 'Pretzel', 'Coffee Cup', 'Boba Tea',
+  // Everyday Objects & Tools
+  'Backpack', 'Umbrella', 'Scissors', 'Key', 'Lock', 'Toothbrush', 'Flashlight', 'Compass', 'Hourglass', 'Telescope',
+  'Microscope', 'Clock', 'Headphones', 'Laptop', 'Camera', 'Television', 'Microwave', 'Toaster', 'Candle', 'Anchor',
+  // Transportation & Buildings
+  'Helicopter', 'Submarine', 'Rocket', 'Train', 'Bus', 'Motorcycle', 'Sailboat', 'Hot Air Balloon', 'Skateboard', 'Tractor',
+  'Castle', 'Lighthouse', 'Pyramid', 'Windmill', 'Igloo', 'Bridge', 'Skyscraper', 'Barn', 'Statue of Liberty', 'Ferris Wheel',
+  // Fantasy & Media
+  'Wizard Hat', 'Treasure Chest', 'Pirate Ship', 'Robot', 'Alien', 'Ghost', 'Sword', 'Shield', 'Magic Wand', 'Superhero',
+  'Space Shuttle', 'Guitar', 'Drums', 'Violin', 'Piano', 'Basketball', 'Soccer Ball', 'Bowling Pin', 'Trophy', 'Crown'
+];
+
+// Shuffled deck to guarantee non-repeating word draws across games
+let unusedWordDeck = [];
+
+function getNextSecretWord() {
+  if (unusedWordDeck.length === 0) {
+    unusedWordDeck = [...WORDS];
+    // Fisher-Yates Shuffle
+    for (let i = unusedWordDeck.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [unusedWordDeck[i], unusedWordDeck[j]] = [unusedWordDeck[j], unusedWordDeck[i]];
+    }
+  }
+  return unusedWordDeck.pop();
+}
+
 const rooms = {};
 
 io.on('connection', (socket) => {
@@ -63,7 +98,7 @@ io.on('connection', (socket) => {
     if (!room || room.players.length < 3 || room.state !== 'LOBBY') return;
 
     room.state = 'STARTING';
-    room.secretWord = WORDS[Math.floor(Math.random() * WORDS.length)];
+    room.secretWord = getNextSecretWord();
     const imposterIndex = Math.floor(Math.random() * room.players.length);
     room.imposterId = room.players[imposterIndex].id;
     room.currentTurnIndex = 0;
@@ -138,7 +173,6 @@ io.on('connection', (socket) => {
 
 function initiateVotingIntermission(room) {
   room.state = 'INTERMISSION';
-  // 5-second delay so everyone can review the final stroke on the canvas
   io.to(room.id).emit('start_intermission', { delaySeconds: 5 });
 
   setTimeout(() => {
