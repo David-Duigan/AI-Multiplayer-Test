@@ -16,6 +16,15 @@ const SPAWNS = [
     { x: 200, y: 800 }
 ];
 
+// Fixed Obstacles in the arena [x, y, radius]
+const OBSTACLES = [
+    { x: 500, y: 350, r: 50 },
+    { x: 1300, y: 350, r: 50 },
+    { x: 500, y: 750, r: 50 },
+    { x: 1300, y: 750, r: 50 },
+    { x: 900, y: 550, r: 70 }
+];
+
 const rooms = {};
 
 function createRoom(roomCode) {
@@ -24,9 +33,7 @@ function createRoom(roomCode) {
         players: {},
         bullets: [],
         powerups: [],
-        nextBulletId: 1,
-        lastPowerupSpawn: Date.now(),
-        hazardAngle: 0
+        lastPowerupSpawn: Date.now()
     };
 }
 
@@ -63,7 +70,12 @@ io.on('connection', (socket) => {
                 speedTimer: 0
             };
 
-            socket.emit('initPlayer', { id: socket.id, slot: slot, color: PLAYER_COLORS[slot] });
+            socket.emit('initPlayer', { 
+                id: socket.id, 
+                slot: slot, 
+                color: PLAYER_COLORS[slot],
+                obstacles: OBSTACLES 
+            });
             io.to(roomCode).emit('roomState', { players: room.players });
         } else {
             socket.emit('roomFull');
@@ -80,41 +92,25 @@ io.on('connection', (socket) => {
         }
     });
 
-    // Spawn bullets using CLIENT LOCAL origin coordinates
-    socket.on('requestShoot', (data) => {
+    // Accept local bullets generated directly from the client's predicted state
+    socket.on('spawnLocalBullets', (data) => {
         if (!currentRoom || !rooms[currentRoom]) return;
         const room = rooms[currentRoom];
         const p = room.players[socket.id];
         if (!p || p.hp <= 0) return;
 
-        const speed = 20;
-
-        if (data.isTriple || p.tripleTimer > Date.now()) {
-            [-0.2, 0, 0.2].forEach(offset => {
-                const finalAngle = data.angle + offset;
-                room.bullets.push({
-                    id: room.nextBulletId++,
-                    owner: socket.id,
-                    x: data.originX + Math.cos(finalAngle) * 30,
-                    y: data.originY + Math.sin(finalAngle) * 30,
-                    vx: Math.cos(finalAngle) * speed,
-                    vy: Math.sin(finalAngle) * speed,
-                    color: p.color,
-                    life: 80
-                });
-            });
-        } else {
+        data.bullets.forEach(b => {
             room.bullets.push({
-                id: room.nextBulletId++,
+                id: b.id,
                 owner: socket.id,
-                x: data.originX + Math.cos(data.angle) * 30,
-                y: data.originY + Math.sin(data.angle) * 30,
-                vx: Math.cos(data.angle) * speed,
-                vy: Math.sin(data.angle) * speed,
+                x: b.x,
+                y: b.y,
+                vx: b.vx,
+                vy: b.vy,
                 color: p.color,
                 life: 80
             });
-        }
+        });
     });
 
     socket.on('disconnect', () => {
@@ -133,22 +129,19 @@ setInterval(() => {
     Object.keys(rooms).forEach(code => {
         const room = rooms[code];
 
-        // Update Central Hazard
-        room.hazardAngle += 0.02;
-
-        // Spawn Power-Ups
-        if (Date.now() - room.lastPowerupSpawn > 7000 && room.powerups.length < 4) {
+        // Power-Up Spawner
+        if (Date.now() - room.lastPowerupSpawn > 6000 && room.powerups.length < 4) {
             room.lastPowerupSpawn = Date.now();
             const types = ['SHIELD', 'TRIPLE', 'SPEED'];
             room.powerups.push({
                 id: Math.random(),
-                x: 300 + Math.random() * 1200,
-                y: 200 + Math.random() * 600,
+                x: 250 + Math.random() * 1300,
+                y: 150 + Math.random() * 700,
                 type: types[Math.floor(Math.random() * types.length)]
             });
         }
 
-        // Check Powerup Pickups
+        // Powerup Collection Check
         for (let i = room.powerups.length - 1; i >= 0; i--) {
             const pow = room.powerups[i];
             Object.values(room.players).forEach(p => {
@@ -163,7 +156,7 @@ setInterval(() => {
             });
         }
 
-        // Bullets Collision & Physics
+        // Bullet Updates & Collisions
         for (let i = room.bullets.length - 1; i >= 0; i--) {
             const b = room.bullets[i];
             b.x += b.vx;
@@ -172,16 +165,20 @@ setInterval(() => {
 
             let hit = false;
 
+            // Check Obstacle Collisions
+            OBSTACLES.forEach(obs => {
+                if (Math.hypot(obs.x - b.x, obs.y - b.y) < obs.r) {
+                    hit = true;
+                }
+            });
+
+            // Check Player Collisions
             Object.values(room.players).forEach(p => {
                 if (!hit && p.hp > 0 && p.id !== b.owner) {
                     const dist = Math.hypot(p.x - b.x, p.y - b.y);
                     if (dist < 26) {
                         hit = true;
-
-                        // Shield Mitigates Damage
-                        let dmg = 25;
-                        if (p.shieldTimer > Date.now()) dmg = 5;
-
+                        let dmg = p.shieldTimer > Date.now() ? 5 : 25;
                         p.hp -= dmg;
 
                         io.to(code).emit('impactEvent', { x: b.x, y: b.y, color: b.color });
@@ -207,20 +204,19 @@ setInterval(() => {
                 }
             });
 
-            if (hit || b.life <= 0 || b.x < -100 || b.x > 3000 || b.y < -100 || b.y > 3000) {
+            if (hit || b.life <= 0 || b.x < 0 || b.x > 2000 || b.y < 0 || b.y > 1200) {
                 room.bullets.splice(i, 1);
             }
         }
 
-        // Sync state to room
+        // Broadcast State
         io.to(code).emit('serverState', {
             players: room.players,
             bullets: room.bullets,
-            powerups: room.powerups,
-            hazardAngle: room.hazardAngle
+            powerups: room.powerups
         });
     });
 }, 1000 / 40);
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`Aether Arena Server running on port ${PORT}`));
+server.listen(PORT, () => console.log(`Server running on port ${PORT}`));

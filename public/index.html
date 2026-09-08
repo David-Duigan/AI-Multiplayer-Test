@@ -11,8 +11,7 @@
             width: 100vw; height: 100vh;
             background: #050608; color: #fff;
             font-family: 'Segoe UI', system-ui, sans-serif;
-            overflow: hidden;
-            display: flex; align-items: center; justify-content: center;
+            overflow: hidden; display: flex; align-items: center; justify-content: center;
         }
 
         #ui-overlay {
@@ -30,7 +29,7 @@
             background: #0a0d14; color: #00f0ff;
             border: 1px solid #1e293b; padding: 10px 16px;
             border-radius: 6px; font-size: 16px; outline: none;
-            text-transform: uppercase; letter-spacing: 1px; font-weight: bold;
+            text-transform: uppercase; font-weight: bold;
         }
 
         button {
@@ -38,26 +37,16 @@
             color: #000; font-weight: 800; border: none;
             padding: 10px 20px; border-radius: 6px; font-size: 15px;
             cursor: pointer; transition: all 0.2s ease;
-            box-shadow: 0 0 15px rgba(0, 240, 255, 0.4);
-        }
-
-        button:hover {
-            transform: scale(1.05);
-            box-shadow: 0 0 25px rgba(0, 240, 255, 0.8);
         }
 
         #scoreboard {
             position: absolute; top: 20px; right: 20px; z-index: 90;
             background: rgba(10, 14, 23, 0.8);
             border: 1px solid rgba(255, 255, 255, 0.1);
-            padding: 15px 20px; border-radius: 10px;
-            backdrop-filter: blur(8px); min-width: 180px;
+            padding: 15px 20px; border-radius: 10px; backdrop-filter: blur(8px);
         }
 
-        .score-row {
-            display: flex; justify-content: space-between;
-            font-weight: bold; margin-top: 6px; font-size: 14px;
-        }
+        .score-row { display: flex; justify-content: space-between; font-weight: bold; margin-top: 6px; font-size: 14px; gap: 15px;}
 
         #crosshair {
             position: absolute; width: 22px; height: 22px;
@@ -76,7 +65,6 @@
 <div id="ui-overlay">
     <input type="text" id="roomInput" placeholder="ROOM CODE" value="MATCH1" />
     <button onclick="joinRoom()">JOIN MATCH</button>
-    <button onclick="toggleFullscreen()">FULLSCREEN 🖵</button>
 </div>
 
 <div id="scoreboard">
@@ -94,13 +82,14 @@
     const crosshair = document.getElementById('crosshair');
 
     let myId = null;
-    let localPlayer = { x: 0, y: 0, angle: 0, hp: 100 };
+    let localPlayer = { x: 0, y: 0, angle: 0 };
     let serverPlayers = {};
     let interpolatedPlayers = {};
-    let bullets = [];
+    let localBullets = [];
+    let serverBullets = [];
     let powerups = [];
+    let obstacles = [];
     let particles = [];
-    let hazardAngle = 0;
     let keys = {};
     let mouse = { x: 0, y: 0 };
     let lastDash = 0;
@@ -122,30 +111,36 @@
         crosshair.style.top = `${e.clientY}px`;
     });
 
-    // Local-Origin Shoot Dispatch
+    // Spawn locally FIRST, then emit to server
     window.addEventListener('mousedown', () => {
         if (!myId || !serverPlayers[myId] || serverPlayers[myId].hp <= 0) return;
-        
-        const angle = Math.atan2(mouse.y - localPlayer.y, mouse.x - localPlayer.x);
 
-        // Send local position as the spawn origin
-        socket.emit('requestShoot', {
-            originX: localPlayer.x,
-            originY: localPlayer.y,
-            angle: angle,
-            isTriple: serverPlayers[myId].tripleTimer > Date.now()
+        const p = serverPlayers[myId];
+        const angle = Math.atan2(mouse.y - localPlayer.y, mouse.x - localPlayer.x);
+        const speed = 20;
+        const newBullets = [];
+
+        const isTriple = p.tripleTimer > Date.now();
+        const angles = isTriple ? [angle - 0.2, angle, angle + 0.2] : [angle];
+
+        angles.forEach(a => {
+            const bullet = {
+                id: Math.random().toString(36).substring(2, 9),
+                x: localPlayer.x + Math.cos(a) * 30,
+                y: localPlayer.y + Math.sin(a) * 30,
+                vx: Math.cos(a) * speed,
+                vy: Math.sin(a) * speed,
+                color: p.color,
+                life: 80
+            };
+            localBullets.push(bullet);
+            newBullets.push(bullet);
         });
 
+        // Notify server to replicate for opponent screens
+        socket.emit('spawnLocalBullets', { bullets: newBullets });
         screenShake = 3;
     });
-
-    function toggleFullscreen() {
-        if (!document.fullscreenElement) {
-            document.documentElement.requestFullscreen();
-        } else {
-            document.exitFullscreen();
-        }
-    }
 
     function joinRoom() {
         const room = document.getElementById('roomInput').value.trim().toUpperCase();
@@ -155,7 +150,10 @@
         }
     }
 
-    socket.on('initPlayer', (data) => myId = data.id);
+    socket.on('initPlayer', (data) => {
+        myId = data.id;
+        obstacles = data.obstacles;
+    });
 
     socket.on('roomState', (data) => {
         serverPlayers = data.players;
@@ -175,7 +173,7 @@
 
     socket.on('impactEvent', (data) => {
         screenShake = 8;
-        for (let i = 0; i < 15; i++) {
+        for (let i = 0; i < 12; i++) {
             particles.push({
                 x: data.x, y: data.y,
                 vx: (Math.random() - 0.5) * 8, vy: (Math.random() - 0.5) * 8,
@@ -186,20 +184,16 @@
 
     socket.on('serverState', (data) => {
         serverPlayers = data.players;
-        bullets = data.bullets;
+        serverBullets = data.bullets;
         powerups = data.powerups;
-        hazardAngle = data.hazardAngle;
 
         Object.keys(serverPlayers).forEach(id => {
-            if (!interpolatedPlayers[id]) {
-                interpolatedPlayers[id] = { ...serverPlayers[id] };
-            }
+            if (!interpolatedPlayers[id]) interpolatedPlayers[id] = { ...serverPlayers[id] };
         });
 
         updateScoreboard();
     });
 
-    // Send high-rate local movement
     setInterval(() => {
         if (!myId || !serverPlayers[myId] || serverPlayers[myId].hp <= 0) return;
         socket.emit('playerTransform', {
@@ -213,29 +207,51 @@
         if (!myId || !serverPlayers[myId] || serverPlayers[myId].hp <= 0) return;
 
         const p = serverPlayers[myId];
-        let speed = p.speedTimer > Date.now() ? 10 : 6;
+        let speed = p.speedTimer > Date.now() ? 9 : 5.5;
 
         if (keys['shift'] && Date.now() - lastDash > 1000) {
-            speed = 32;
+            speed = 28;
             lastDash = Date.now();
-
-            for (let i = 0; i < 12; i++) {
-                particles.push({
-                    x: localPlayer.x, y: localPlayer.y,
-                    vx: (Math.random() - 0.5) * 5, vy: (Math.random() - 0.5) * 5,
-                    life: 15, color: p.color
-                });
-            }
         }
 
-        if (keys['w'] || keys['arrowup']) localPlayer.y -= speed;
-        if (keys['s'] || keys['arrowdown']) localPlayer.y += speed;
-        if (keys['a'] || keys['arrowleft']) localPlayer.x -= speed;
-        if (keys['d'] || keys['arrowright']) localPlayer.x += speed;
+        let nextX = localPlayer.x;
+        let nextY = localPlayer.y;
 
-        localPlayer.x = Math.max(30, Math.min(canvas.width - 30, localPlayer.x));
-        localPlayer.y = Math.max(30, Math.min(canvas.height - 30, localPlayer.y));
+        if (keys['w'] || keys['arrowup']) nextY -= speed;
+        if (keys['s'] || keys['arrowdown']) nextY += speed;
+        if (keys['a'] || keys['arrowleft']) nextX -= speed;
+        if (keys['d'] || keys['arrowright']) nextX += speed;
+
+        // Obstacle Collisions with Local Player
+        obstacles.forEach(obs => {
+            if (Math.hypot(nextX - obs.x, nextY - obs.y) < obs.r + 20) {
+                const angle = Math.atan2(nextY - obs.y, nextX - obs.x);
+                nextX = obs.x + Math.cos(angle) * (obs.r + 20);
+                nextY = obs.y + Math.sin(angle) * (obs.r + 20);
+            }
+        });
+
+        localPlayer.x = Math.max(30, Math.min(canvas.width - 30, nextX));
+        localPlayer.y = Math.max(30, Math.min(canvas.height - 30, nextY));
         localPlayer.angle = Math.atan2(mouse.y - localPlayer.y, mouse.x - localPlayer.x);
+    }
+
+    function updateLocalBullets() {
+        for (let i = localBullets.length - 1; i >= 0; i--) {
+            let b = localBullets[i];
+            b.x += b.vx;
+            b.y += b.vy;
+            b.life--;
+
+            let hitObstacle = false;
+            obstacles.forEach(obs => {
+                if (Math.hypot(obs.x - b.x, obs.y - b.y) < obs.r) hitObstacle = true;
+            });
+
+            if (hitObstacle || b.life <= 0 || b.x < 0 || b.x > canvas.width || b.y < 0 || b.y > canvas.height) {
+                localBullets.splice(i, 1);
+            }
+        }
     }
 
     function updateOpponents() {
@@ -261,18 +277,16 @@
         ctx.translate(x, y);
         ctx.rotate(angle);
 
-        // Thruster flame
         ctx.fillStyle = speedActive ? '#00f0ff' : '#ff5500';
         ctx.beginPath();
         ctx.moveTo(-22, -6);
-        ctx.lineTo(-32 - Math.random() * (speedActive ? 16 : 8), 0);
+        ctx.lineTo(-32 - Math.random() * 10, 0);
         ctx.lineTo(-22, 6);
         ctx.fill();
 
-        // Ship hull
         ctx.fillStyle = color;
         ctx.shadowColor = color;
-        ctx.shadowBlur = 14;
+        ctx.shadowBlur = 12;
 
         ctx.beginPath();
         ctx.moveTo(25, 0);
@@ -282,26 +296,16 @@
         ctx.closePath();
         ctx.fill();
 
-        // Cockpit
-        ctx.fillStyle = '#ffffff';
-        ctx.beginPath();
-        ctx.arc(4, 0, 5, 0, Math.PI * 2);
-        ctx.fill();
-
         ctx.restore();
 
-        // Shield Aura
         if (shieldActive) {
             ctx.strokeStyle = '#00f0ff';
             ctx.lineWidth = 3;
-            ctx.shadowColor = '#00f0ff';
-            ctx.shadowBlur = 15;
             ctx.beginPath();
             ctx.arc(x, y, 32, 0, Math.PI * 2);
             ctx.stroke();
         }
 
-        // Health Bar
         if (hp > 0) {
             ctx.fillStyle = 'rgba(255,255,255,0.2)';
             ctx.fillRect(x - 25, y - 35, 50, 6);
@@ -313,11 +317,9 @@
     function render() {
         ctx.save();
 
-        // Camera Shake
         if (screenShake > 0) {
             ctx.translate((Math.random() - 0.5) * screenShake, (Math.random() - 0.5) * screenShake);
-            screenShake *= 0.9;
-            if (screenShake < 0.5) screenShake = 0;
+            screenShake *= 0.88;
         }
 
         ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -332,56 +334,44 @@
             ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
         }
 
-        // Central Rotating Hazard
-        ctx.save();
-        ctx.translate(canvas.width / 2, canvas.height / 2);
-        ctx.rotate(hazardAngle);
-        ctx.strokeStyle = 'rgba(255, 0, 85, 0.6)';
-        ctx.lineWidth = 8;
-        ctx.shadowColor = '#ff0055';
-        ctx.shadowBlur = 20;
-        ctx.beginPath();
-        ctx.moveTo(-150, 0);
-        ctx.lineTo(150, 0);
-        ctx.stroke();
-        ctx.restore();
+        // Draw Obstacles
+        obstacles.forEach(obs => {
+            ctx.fillStyle = '#0f172a';
+            ctx.strokeStyle = '#00f0ff';
+            ctx.lineWidth = 3;
+            ctx.shadowColor = '#00f0ff';
+            ctx.shadowBlur = 10;
 
-        // Render Power-Ups
+            ctx.beginPath();
+            ctx.arc(obs.x, obs.y, obs.r, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+        });
+
+        // Draw Power-Ups
         powerups.forEach(p => {
-            ctx.shadowBlur = 15;
-            let col = '#00f0ff';
-            if (p.type === 'TRIPLE') col = '#ffcc00';
-            if (p.type === 'SPEED') col = '#00ff66';
-
+            let col = p.type === 'TRIPLE' ? '#ffcc00' : (p.type === 'SPEED' ? '#00ff66' : '#00f0ff');
             ctx.fillStyle = col;
-            ctx.shadowColor = col;
             ctx.beginPath();
             ctx.arc(p.x, p.y, 16, 0, Math.PI * 2);
             ctx.fill();
-
-            ctx.fillStyle = '#000';
-            ctx.font = '900 12px sans-serif';
-            ctx.fillText(p.type[0], p.x - 4, p.y + 4);
         });
 
-        // Render Particles
-        for (let i = particles.length - 1; i >= 0; i--) {
-            let part = particles[i];
-            part.x += part.vx;
-            part.y += part.vy;
-            part.life--;
-            ctx.fillStyle = part.color;
-            ctx.beginPath();
-            ctx.arc(part.x, part.y, 3, 0, Math.PI * 2);
-            ctx.fill();
-            if (part.life <= 0) particles.splice(i, 1);
-        }
+        // Draw Remote Bullets
+        serverBullets.forEach(b => {
+            if (b.owner !== myId) {
+                ctx.fillStyle = b.color;
+                ctx.beginPath();
+                ctx.arc(b.x, b.y, 6, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        });
 
-        // Render Bullets
-        bullets.forEach(b => {
+        // Draw Local Instant Bullets
+        localBullets.forEach(b => {
             ctx.fillStyle = b.color;
             ctx.shadowColor = b.color;
-            ctx.shadowBlur = 10;
+            ctx.shadowBlur = 8;
             ctx.beginPath();
             ctx.arc(b.x, b.y, 6, 0, Math.PI * 2);
             ctx.fill();
@@ -420,6 +410,7 @@
 
     function loop() {
         updateLocalPlayer();
+        updateLocalBullets();
         updateOpponents();
         render();
         requestAnimationFrame(loop);
