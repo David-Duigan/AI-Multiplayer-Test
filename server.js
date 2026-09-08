@@ -9,18 +9,74 @@ const io = new Server(server, { cors: { origin: "*" } });
 app.use(express.static('public'));
 
 const WORDS = [
+  // Animals
   'Banana', 'Airplane', 'Guitar', 'Elephant', 'Pizza', 'House', 'Bicycle', 'Cat', 'Spider', 'Carrot', 
   'Crown', 'Sun', 'Tree', 'Smartphone', 'Glasses', 'Dog', 'Penguin', 'Giraffe', 'Dolphin', 'Lion', 
   'Tiger', 'Octopus', 'Kangaroo', 'Flamingo', 'Owl', 'Panda', 'Koala', 'Dragon', 'Unicorn', 'Flower', 
   'Mushroom', 'Cactus', 'Volcano', 'Rainbow', 'Mountain', 'Waterfall', 'Forest', 'Island', 'Tornado', 'Starfish',
+  'Sloth', 'Cheetah', 'Zebra', 'Gorilla', 'Chimpanzee', 'Lemur', 'Hippo', 'Rhino', 'Walrus', 'Seal',
+  'Otter', 'Beaver', 'Platypus', 'Chameleon', 'Iguana', 'Gecko', 'Komodo Dragon', 'Crocodile', 'Alligator', 'Anaconda',
+  'Python', 'Rattlesnake', 'Frog', 'Toad', 'Axolotl', 'Salamander', 'Peacock', 'Toucan', 'Parrot', 'Eagle',
+  'Hawk', 'Falcon', 'Vulture', 'Ostrich', 'Emu', 'Hummingbird', 'Kingfisher', 'Pelican', 'Swan', 'Flamingo',
+  'Jellyfish', 'Squid', 'Whale Shark', 'Blue Whale', 'Orca', 'Stingray', 'Seahorse', 'Lobster', 'Crab', 'Hermit Crab',
+  'Scorpion', 'Tarantula', 'Centipede', 'Praying Mantis', 'Ladybug', 'Bumblebee', 'Dragonfly', 'Grasshopper', 'Firefly', 'Butterfly',
+  
+  // Food & Drinks
   'Hamburger', 'Hotdog', 'Sushi', 'Taco', 'Donut', 'Ice Cream', 'Popcorn', 'Watermelon', 'Pineapple', 'Strawberry',
   'Cookie', 'Cupcake', 'Pancake', 'Waffle', 'Avocado', 'Broccoli', 'Cheese', 'Pretzel', 'Coffee Cup', 'Boba Tea',
+  'Burrito', 'Quesadilla', 'Nachos', 'Ramen', 'Dumpling', 'Spring Roll', 'Paella', 'Croissant', 'Baguette', 'Pretzel',
+  'Poutine', 'Falafel', 'Hummus', 'Kebab', 'Curry', 'Biryani', 'Lasagna', 'Spaghetti', 'Meatball', 'Pizza Slice',
+  'Garlic Bread', 'Onion Ring', 'French Fries', 'Chicken Nugget', 'Corn Dog', 'Submarine Sandwich', 'Omelette', 'Fried Egg', 'Bacon', 'Sausage',
+  'Steak', 'Lobster Tail', 'Clam Chowder', 'Tomato Soup', 'Caesar Salad', 'Fruit Tart', 'Cheesecake', 'Brownie', 'Eclair', 'Macaron',
+  'Apple Pie', 'Pumpkin Pie', 'Cinnamon Roll', 'Churro', 'Cotton Candy', 'Lollipop', 'Gummy Bear', 'Chocolate Bar', 'Milkshake', 'Smoothie',
+  'Espresso', 'Cappuccino', 'Lemonade', 'Iced Tea', 'Coconut Water', 'Matcha Latte', 'Hot Chocolate', 'Wine Glass', 'Beer Mug', 'Cocktail',
+
+  // Everyday Items & Tools
   'Backpack', 'Umbrella', 'Scissors', 'Key', 'Lock', 'Toothbrush', 'Flashlight', 'Compass', 'Hourglass', 'Telescope',
   'Microscope', 'Clock', 'Headphones', 'Laptop', 'Camera', 'Television', 'Microwave', 'Toaster', 'Candle', 'Anchor',
+  'Paintbrush', 'Palette', 'Easel', 'Pencil', 'Fountain Pen', 'Notebook', 'Magnifying Glass', 'Calculator', 'Tape Measure', 'Hammer',
+  'Screwdriver', 'Wrench', 'Pliers', 'Handsaw', 'Chainsaw', 'Axe', 'Shovel', 'Rake', 'Wheelbarrow', 'Lawnmower',
+  'Bucket', 'Watering Can', 'Broom', 'Mop', 'Vacuum Cleaner', 'Ironing Board', 'Washing Machine', 'Hair Dryer', 'Comb', 'Hairbrush',
+  'Perfume Bottle', 'Lipstick', 'Compact Mirror', 'Sunglasses', 'Wristwatch', 'Wallet', 'Handbag', 'Suitcase', 'Passport', 'Ticket',
+  'Envelope', 'Postage Stamp', 'Globe', 'Map', 'Bookcase', 'Desk Lamp', 'Alarm Clock', 'Bed', 'Sofa', 'Rocking Chair',
+
+  // Vehicles & Transportation
   'Helicopter', 'Submarine', 'Rocket', 'Train', 'Bus', 'Motorcycle', 'Sailboat', 'Hot Air Balloon', 'Skateboard', 'Tractor',
+  'Fire Truck', 'Ambulance', 'Police Car', 'Taxi', 'Dump Truck', 'Cement Mixer', 'Garbage Truck', 'Tow Truck', 'Monster Truck', 'Go-Kart',
+  'Scooter', 'Electric Bike', 'Unicycle', 'Segway', 'Hoverboard', 'Cable Car', 'Gondola', 'Steam Engine', 'Bullet Train', 'Subway Car',
+  'Cruise Ship', 'Yacht', 'Speedboat', 'Kayak', 'Canoe', 'Jet Ski', 'Hovercraft', 'Cargo Ship', 'Pirate Galleon', 'Viking Longship',
+  'Fighter Jet', 'Biplane', 'Zeppelin', 'Space Shuttle', 'Rover', 'UFO', 'Chariot', 'Horse Carriage', 'Sled', 'Snowmobile',
+
+  // Architecture & Structures
   'Castle', 'Lighthouse', 'Pyramid', 'Windmill', 'Igloo', 'Bridge', 'Skyscraper', 'Barn', 'Statue of Liberty', 'Ferris Wheel',
+  'Eiffel Tower', 'Big Ben', 'Taj Mahal', 'Colosseum', 'Great Wall', 'Sphinx', 'Pagoda', 'Temple', 'Cathedral', 'Mosque',
+  'Synagogue', 'Wind Turbine', 'Oil Rig', 'Dam', 'Water Tower', 'Clock Tower', 'Observatory', 'Planetarium', 'Greenhouse', 'Gazebo',
+  'Treehouse', 'Log Cabin', 'Tent', 'Yurt', 'Tipi', 'Skate Park', 'Amphitheater', 'Stadium', 'Roller Coaster', 'Haunted House',
+
+  // Fantasy, History & Fiction
   'Wizard Hat', 'Treasure Chest', 'Pirate Ship', 'Robot', 'Alien', 'Ghost', 'Sword', 'Shield', 'Magic Wand', 'Superhero',
-  'Space Shuttle', 'Guitar', 'Drums', 'Violin', 'Piano', 'Basketball', 'Soccer Ball', 'Bowling Pin', 'Trophy', 'Crown'
+  'Vampire', 'Werewolf', 'Zombie', 'Mummy', 'Frankenstein', 'Mermaid', 'Centaur', 'Minotaur', 'Phoenix', 'Griffin',
+  'Pegasus', 'Cyclops', 'Goblin', 'Gargoyle', 'Genie', 'Leprechaun', 'Fairy', 'Elf', 'Dwarf', 'Knight',
+  'Samurai', 'Ninja', 'Viking', 'Gladiator', 'Pharaoh', 'Space Alien', 'Cyborg', 'Time Machine', 'Crystal Ball', 'Spellbook',
+  'Potion Bottle', 'Cauldron', 'Trident', 'Crossbow', 'Catapult', 'Cannon', 'Armor Suit', 'Crown Jewels', 'Scepter', 'Throne',
+
+  // Sports & Music
+  'Guitar', 'Drums', 'Violin', 'Piano', 'Basketball', 'Soccer Ball', 'Bowling Pin', 'Trophy', 'Trumpet', 'Saxophone',
+  'Flute', 'Clarinet', 'Trombone', 'Tuba', 'Accordion', 'Harp', 'Banjo', 'Ukulele', 'Xylophone', 'Harmonica',
+  'Electric Guitar', 'Bass Guitar', 'Microphone', 'DJ Turntable', 'Boombox', 'Record Player', 'Baseball Bat', 'Tennis Racket', 'Golf Club', 'Hockey Stick',
+  'Lacrosse Stick', 'Cricket Bat', 'Archery Bow', 'Boxing Glove', 'Skateboard Deck', 'Surfboard', 'Snowboard', 'Skis', 'Ice Skates', 'Roller Skates',
+  'Ping Pong Paddle', 'Badminton Racket', 'Dumbbell', 'Kettlebell', 'Treadmill', 'Trampoline', 'Parachute', 'Hang Glider', 'Fishing Rod', 'Target',
+
+  // Nature & Space
+  'Meteor', 'Comet', 'Asteroid', 'Black Hole', 'Galaxy', 'Constellation', 'Full Moon', 'Solar Eclipse', 'Northern Lights', 'Milky Way',
+  'Desert Dunes', 'Oasis', 'Glacier', 'Iceberg', 'Geyser', 'Cave', 'Canyon', 'Coral Reef', 'Swamp', 'Volcanic Eruption',
+  'Sunflower', 'Rose', 'Tulip', 'Daisy', 'Orchid', 'Lotus', 'Dandelion', 'Venus Flytrap', 'Bonsai Tree', 'Pine Tree',
+  'Palm Tree', 'Willow Tree', 'Oak Tree', 'Redwood Tree', 'Maple Leaf', 'Four Leaf Clover', 'Acorn', 'Pinecone', 'Seashell', 'Pearl',
+
+  // Clothing & Wearables
+  'Sombrero', 'Top Hat', 'Cowboy Hat', 'Baseball Cap', 'Beanie', 'Beret', 'Helmet', 'Crown', 'Tiara', 'Turban',
+  'Sunglasses', 'Monocle', 'Bow Tie', 'Necktie', 'Scarf', 'Mitten', 'Winter Gloves', 'Leather Jacket', 'Raincoat', 'Tuxedo',
+  'Ballgown', 'Kimono', 'Kilt', 'Poncho', 'High Heels', 'Cowboy Boots', 'Sneakers', 'Flip Flops', 'Ice Skates', 'Slippers'
 ];
 
 let unusedWordDeck = [];
@@ -28,6 +84,7 @@ let unusedWordDeck = [];
 function getNextSecretWord() {
   if (unusedWordDeck.length === 0) {
     unusedWordDeck = [...WORDS];
+    // Fisher-Yates shuffle
     for (let i = unusedWordDeck.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [unusedWordDeck[i], unusedWordDeck[j]] = [unusedWordDeck[j], unusedWordDeck[i]];
@@ -325,7 +382,8 @@ function processVotes(room) {
 
   io.to(room.id).emit('reveal_votes_animation', resultPayload);
 
-  const delayTime = (room.detailedVotes.length * 300) + 3000;
+  // Slower vote stagger (700ms per vote reveal) + 5 extra seconds hold time (8000ms base delay)
+  const delayTime = (room.detailedVotes.length * 700) + 8000;
   setTimeout(() => {
     if (!rooms[room.id]) return;
     if (resultPayload.nextAction === 'GAMEOVER') {
