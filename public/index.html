@@ -11,6 +11,7 @@
       --card: #1e293b;
       --accent: #6366f1;
       --danger: #ef4444;
+      --success: #22c55e;
       --text: #f8fafc;
       --subtext: #94a3b8;
     }
@@ -18,7 +19,7 @@
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
     body { background: var(--bg); color: var(--text); display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 1rem; overflow-x: hidden; }
 
-    .container { background: var(--card); width: 100%; max-width: 1000px; border-radius: 12px; padding: 1.5rem; position: relative; }
+    .container { background: var(--card); width: 100%; max-width: 1280px; border-radius: 12px; padding: 1.5rem; position: relative; }
     .screen { display: none; flex-direction: column; gap: 1rem; }
     .screen.active { display: flex; }
 
@@ -27,37 +28,48 @@
     button { background: var(--accent); color: white; cursor: pointer; font-weight: bold; }
     button.secondary { background: #475569; }
 
-    .player-badge { background: #334155; padding: 0.5rem 1rem; border-radius: 6px; display: flex; justify-content: space-between; margin-bottom: 0.5rem; }
+    /* Expanded Gameplay Layout with Right Sidebar */
+    .gameplay-layout { display: flex; gap: 1.5rem; width: 100%; }
+    .canvas-section { flex: 1; display: flex; flex-direction: column; gap: 1rem; }
+    .sidebar { width: 240px; background: #0f172a; border-radius: 8px; padding: 1rem; display: flex; flex-direction: column; gap: 0.75rem; border: 1px solid #334155; }
     
-    /* Enlarged Drawing Canvas */
-    .canvas-wrapper { position: relative; border: 3px solid #475569; border-radius: 8px; overflow: hidden; background: #fff; width: 100%; display: flex; justify-content: center; transition: border-color 0.3s, box-shadow 0.3s; }
-    .canvas-wrapper.your-turn { border-color: #22c55e; box-shadow: 0 0 20px rgba(34, 197, 94, 0.4); }
-    canvas { display: block; cursor: crosshair; }
+    .sidebar-player { padding: 0.6rem 0.8rem; border-radius: 6px; background: #1e293b; display: flex; align-items: center; justify-content: space-between; font-weight: 500; font-size: 0.95rem; border-left: 4px solid transparent; }
+    .sidebar-player.turn { border-left-color: var(--success); background: #334155; color: #38bdf8; font-weight: bold; }
+    .sidebar-player.dead { opacity: 0.35; text-decoration: line-through; background: #0f172a; border-left-color: var(--danger); }
 
-    /* Flash / Particle Overlay Canvas */
+    /* Expanded Canvas Area */
+    .canvas-wrapper { position: relative; border: 3px solid #475569; border-radius: 8px; overflow: hidden; background: #ffffff; width: 100%; display: flex; justify-content: center; transition: border-color 0.3s, box-shadow 0.3s; }
+    .canvas-wrapper.your-turn { border-color: var(--success); box-shadow: 0 0 25px rgba(34, 197, 94, 0.4); }
+    canvas#paint-canvas { display: block; cursor: none; } /* Native cursor hidden for custom dot */
+
     #fx-canvas { position: absolute; inset: 0; pointer-events: none; z-index: 5; }
+
+    /* Custom Brush Size Cursor Dot */
+    #cursor-dot {
+      position: absolute; pointer-events: none; border-radius: 50%;
+      border: 1.5px solid rgba(0,0,0,0.6); box-shadow: 0 0 4px rgba(255,255,255,0.8);
+      transform: translate(-50%, -50%); display: none; z-index: 20;
+    }
 
     .toast { position: absolute; top: 15px; left: 50%; transform: translateX(-50%); background: var(--danger); color: white; padding: 0.5rem 1.2rem; border-radius: 20px; font-weight: bold; opacity: 0; transition: opacity 0.3s; pointer-events: none; z-index: 10; }
     .toast.show { opacity: 1; }
     .flash-error { animation: flash 0.4s ease; }
     @keyframes flash { 50% { border-color: var(--danger); box-shadow: 0 0 20px var(--danger); } }
 
-    /* Palette Controls */
-    .color-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
-    .color-btn { width: 32px; height: 32px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; padding: 0; transition: transform 0.1s; }
-    .color-btn.selected { border-color: #ffffff; transform: scale(1.15); box-shadow: 0 0 8px rgba(255,255,255,0.5); }
+    /* 8 Colors Layout */
+    .color-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 8px; }
+    .color-btn { width: 34px; height: 34px; border-radius: 50%; border: 2px solid #475569; cursor: pointer; padding: 0; transition: transform 0.1s; }
+    .color-btn.selected { border-color: #ffffff; transform: scale(1.18); box-shadow: 0 0 10px rgba(255,255,255,0.6); }
 
-    /* Brush Size Custom Dropdown Options */
-    .size-option-dot { display: inline-block; border-radius: 50%; background: #ffffff; vertical-align: middle; margin-right: 8px; }
-
-    /* Notification Banner */
-    .notify-banner { position: fixed; top: 20px; right: -300px; background: #22c55e; color: white; padding: 0.75rem 1.5rem; border-radius: 8px; font-weight: bold; transition: right 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); z-index: 100; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+    .notify-banner { position: fixed; top: 20px; right: -300px; background: var(--success); color: white; padding: 0.75rem 1.5rem; border-radius: 8px; font-weight: bold; transition: right 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); z-index: 100; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
     .notify-banner.show { right: 20px; }
 
     .vote-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 1rem; }
     .role-banner { font-size: 1.2rem; font-weight: bold; text-align: center; padding: 0.5rem; border-radius: 6px; background: #334155; }
-    
     .countdown-widget { position: absolute; bottom: 15px; right: 15px; background: rgba(15,23,42,0.85); padding: 0.5rem 1rem; border-radius: 20px; border: 1px solid #475569; font-weight: bold; font-size: 0.9rem; }
+    
+    /* Reveal End Screen Styling */
+    .reveal-card { background: #334155; padding: 2rem; border-radius: 12px; display: flex; flex-direction: column; gap: 1rem; align-items: center; margin: 1rem 0; border: 2px solid #475569; }
   </style>
 </head>
 <body>
@@ -82,46 +94,63 @@
     </div>
   </div>
 
-  <!-- GAMEPLAY SCREEN -->
+  <!-- PRE-GAME COUNTDOWN INTERMISSION -->
+  <div id="pregame-screen" class="screen" style="text-align: center; padding: 5rem 1rem;">
+    <h1 style="font-size: 3rem; color: #38bdf8;">Starting Game!</h1>
+    <p style="color: var(--subtext); font-size: 1.3rem; margin-top: 1rem;">Prepare your brushes...</p>
+    <div style="font-size: 4rem; font-weight: bold; margin-top: 1.5rem; color: var(--success);" id="pregame-timer">3</div>
+  </div>
+
+  <!-- GAMEPLAY SCREEN WITH SIDEBAR -->
   <div id="game-screen" class="screen">
     <div class="role-banner" id="role-banner">Secret Word: Loading...</div>
     <div style="text-align: center; font-size: 1.1rem; color: #38bdf8;" id="turn-indicator">Waiting for turn...</div>
 
-    <div class="canvas-wrapper" id="canvas-wrapper">
-      <div id="toast" class="toast">Line too short! Min length is 45px.</div>
-      <canvas id="paint-canvas" width="900" height="520"></canvas>
-      <canvas id="fx-canvas" width="900" height="520"></canvas>
-    </div>
+    <div class="gameplay-layout">
+      <!-- Expanded Drawing Canvas -->
+      <div class="canvas-section">
+        <div class="canvas-wrapper" id="canvas-wrapper">
+          <div id="toast" class="toast">Line too short! Min length is 45px.</div>
+          <div id="cursor-dot"></div>
+          <canvas id="paint-canvas" width="960" height="560"></canvas>
+          <canvas id="fx-canvas" width="960" height="560"></canvas>
+        </div>
 
-    <!-- Drawing Controls Bar -->
-    <div style="display: flex; gap: 1.5rem; align-items: center; justify-content: space-between; background: #334155; padding: 0.75rem 1.2rem; border-radius: 8px;">
-      
-      <!-- 12 Color Options (2 Rows of 6) -->
-      <div>
-        <span style="font-size: 0.85rem; color: var(--subtext); display: block; margin-bottom: 4px;">Color</span>
-        <div class="color-grid" id="color-grid"></div>
+        <!-- Controls Bar -->
+        <div style="display: flex; gap: 1.5rem; align-items: center; justify-content: space-between; background: #334155; padding: 0.75rem 1.2rem; border-radius: 8px;">
+          <!-- Exactly 8 Colors (Includes White) -->
+          <div>
+            <span style="font-size: 0.85rem; color: var(--subtext); display: block; margin-bottom: 4px;">Color (8 Options)</span>
+            <div class="color-grid" id="color-grid"></div>
+          </div>
+
+          <!-- Dynamic Brush Thickness Dropdown -->
+          <div>
+            <label for="stroke-size-select" style="font-size: 0.85rem; color: var(--subtext); display: block; margin-bottom: 4px;">Brush Size</label>
+            <select id="stroke-size-select" style="width: 150px;">
+              <option value="4">● Small (4px)</option>
+              <option value="8" selected>●● Medium (8px)</option>
+              <option value="14">●●● Thick (14px)</option>
+              <option value="20">●●●● Heavy (20px)</option>
+              <option value="28">●●●●● Giant (28px)</option>
+              <option value="38">●●●●●● Huge (38px)</option>
+            </select>
+          </div>
+        </div>
       </div>
 
-      <!-- Size Dropdown with Visual Indicators -->
-      <div>
-        <label for="stroke-size-select" style="font-size: 0.85rem; color: var(--subtext); display: block; margin-bottom: 4px;">Brush Size</label>
-        <select id="stroke-size-select" style="width: 140px;">
-          <option value="3">● Small (3px)</option>
-          <option value="6" selected>●● Medium (6px)</option>
-          <option value="10">●●● Thick (10px)</option>
-          <option value="15">●●●● Heavy (15px)</option>
-          <option value="22">●●●●● Extra (22px)</option>
-          <option value="30">●●●●●● Giant (30px)</option>
-        </select>
+      <!-- Right Hand Sidebar: Turn Order & Status -->
+      <div class="sidebar">
+        <h3 style="font-size: 1rem; color: var(--subtext); text-align: center; border-bottom: 1px solid #334155; padding-bottom: 0.5rem;">Turn Order</h3>
+        <div id="sidebar-players" style="display: flex; flex-direction: column; gap: 0.5rem;"></div>
       </div>
-
     </div>
   </div>
 
-  <!-- INTERMISSION SCREEN -->
+  <!-- VOTING INTERMISSION -->
   <div id="intermission-screen" class="screen" style="text-align: center; padding: 4rem 1rem; position: relative;">
     <h1 style="font-size: 2.8rem; color: #38bdf8;">Voting Stage!</h1>
-    <p style="color: var(--subtext); font-size: 1.2rem; margin-top: 1rem;">Get ready to identify the imposter...</p>
+    <p style="color: var(--subtext); font-size: 1.2rem; margin-top: 1rem;">Discuss and vote out the imposter...</p>
     <div class="countdown-widget" id="intermission-timer">Starting in: 3s</div>
   </div>
 
@@ -133,11 +162,15 @@
     <div class="countdown-widget" id="vote-timer" style="color: #ef4444;">Time Left: 120s</div>
   </div>
 
-  <!-- GAME OVER SCREEN -->
+  <!-- REVEAL / GAME OVER SCREEN -->
   <div id="gameover-screen" class="screen" style="text-align: center;">
-    <h1 id="gameover-title">Game Over</h1>
-    <p id="gameover-msg" style="font-size: 1.2rem; margin: 1rem 0;"></p>
-    <button onclick="location.reload()">Return to Lobby</button>
+    <h1 id="gameover-title" style="font-size: 2.5rem;">Game Over</h1>
+    <div class="reveal-card">
+      <div id="reveal-winner-text" style="font-size: 1.5rem; font-weight: bold;"></div>
+      <p id="gameover-msg" style="font-size: 1.1rem; color: var(--subtext);"></p>
+      <div id="reveal-details" style="font-size: 1.1rem; margin-top: 0.5rem;"></div>
+    </div>
+    <button onclick="location.reload()" style="max-width: 200px; margin: 0 auto;">Return to Lobby</button>
   </div>
 
 </div>
@@ -145,9 +178,10 @@
 <script>
   const socket = io(window.location.origin);
 
+  // Exactly 8 Colors including White
   const DEFAULT_COLORS = [
-    '#ef4444', '#f97316', '#f59e0b', '#84cc16', '#10b981', '#06b6d4',
-    '#3b82f6', '#6366f1', '#a855f7', '#ec4899', '#000000', '#64748b'
+    '#ef4444', '#f97316', '#f59e0b', '#22c55e', 
+    '#06b6d4', '#3b82f6', '#a855f7', '#ffffff'
   ];
   const MIN_LINE_LENGTH = 45;
 
@@ -156,29 +190,40 @@
   let isDrawing = false;
   let strokePoints = [];
   let selectedColor = DEFAULT_COLORS[0];
-  let canvasSnapshot = null; // Canvas state backup before starting stroke
+  let canvasSnapshot = null;
 
-  // Countdown timers
   let intermissionInterval = null;
   let voteTimerInterval = null;
 
   // DOM Elements
   const lobbyScreen = document.getElementById('lobby-screen');
+  const pregameScreen = document.getElementById('pregame-screen');
   const gameScreen = document.getElementById('game-screen');
   const intermissionScreen = document.getElementById('intermission-screen');
   const voteScreen = document.getElementById('vote-screen');
   const gameoverScreen = document.getElementById('gameover-screen');
 
+  const nameInput = document.getElementById('player-name');
   const canvas = document.getElementById('paint-canvas');
   const ctx = canvas.getContext('2d');
   const fxCanvas = document.getElementById('fx-canvas');
   const fxCtx = fxCanvas.getContext('2d');
   
   const canvasWrapper = document.getElementById('canvas-wrapper');
+  const cursorDot = document.getElementById('cursor-dot');
   const toast = document.getElementById('toast');
   const notifyBanner = document.getElementById('notify-banner');
+  const strokeSizeSelect = document.getElementById('stroke-size-select');
 
-  // --- AUDIO SYNTHESIS ---
+  // --- LOCAL STORAGE NAME PERSISTENCE ---
+  const savedName = localStorage.getItem('fake_artist_player_name');
+  if (savedName) nameInput.value = savedName;
+
+  nameInput.addEventListener('change', () => {
+    localStorage.setItem('fake_artist_player_name', nameInput.value.trim());
+  });
+
+  // --- AUDIO SYNTHESIS ENGINE ---
   const AudioContext = window.AudioContext || window.webkitAudioContext;
   let audioCtx = null;
 
@@ -186,37 +231,69 @@
     if (!audioCtx) audioCtx = new AudioContext();
   }
 
-  function playTone(freq, type, duration) {
+  function playTone(freq, type, duration, delay = 0) {
     if (!audioCtx) return;
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
-    osc.type = type;
-    osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
-    gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + duration);
-    osc.connect(gain);
-    gain.connect(audioCtx.destination);
-    osc.start();
-    osc.stop(audioCtx.currentTime + duration);
+    setTimeout(() => {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = type;
+      osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+      gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + duration);
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start();
+      osc.stop(audioCtx.currentTime + duration);
+    }, delay);
   }
 
-  function playSuccessSound() {
+  function playStartCountdownAudio() {
     initAudio();
-    playTone(523.25, 'sine', 0.15); // C5
-    setTimeout(() => playTone(659.25, 'sine', 0.25), 100); // E5
+    playTone(330, 'sine', 0.2, 0);    // Beep 3
+    playTone(330, 'sine', 0.2, 1000); // Beep 2
+    playTone(330, 'sine', 0.2, 2000); // Beep 1
+    playTone(660, 'triangle', 0.4, 3000); // Start Go!
   }
 
-  function playErrorSound() {
+  function playVictorySound() {
     initAudio();
-    playTone(180, 'sawtooth', 0.3);
+    playTone(523.25, 'triangle', 0.2, 0);   // C5
+    playTone(659.25, 'triangle', 0.2, 150); // E5
+    playTone(783.99, 'triangle', 0.2, 300); // G5
+    playTone(1046.50, 'triangle', 0.5, 450); // C6 Fanfare
   }
 
-  function playTurnSound() {
+  function playDefeatSound() {
     initAudio();
-    playTone(440, 'triangle', 0.2);
+    playTone(300, 'sawtooth', 0.3, 0);
+    playTone(280, 'sawtooth', 0.3, 250);
+    playTone(260, 'sawtooth', 0.3, 500);
+    playTone(220, 'sawtooth', 0.6, 750);
   }
 
-  // --- COLOR PALETTE SETUP ---
+  function playSuccessSound() { initAudio(); playTone(523.25, 'sine', 0.15, 0); playTone(659.25, 'sine', 0.2, 80); }
+  function playErrorSound() { initAudio(); playTone(180, 'sawtooth', 0.3, 0); }
+  function playTurnSound() { initAudio(); playTone(440, 'triangle', 0.2, 0); }
+
+  // --- CURSOR SIZE DOT INDICATOR ---
+  function updateCursorDotSize() {
+    const size = strokeSizeSelect.value;
+    cursorDot.style.width = `${size}px`;
+    cursorDot.style.height = `${size}px`;
+    cursorDot.style.backgroundColor = selectedColor;
+  }
+
+  canvasWrapper.addEventListener('mouseenter', () => { cursorDot.style.display = 'block'; });
+  canvasWrapper.addEventListener('mouseleave', () => { cursorDot.style.display = 'none'; });
+  canvasWrapper.addEventListener('mousemove', (e) => {
+    const rect = canvasWrapper.getBoundingClientRect();
+    cursorDot.style.left = `${e.clientX - rect.left}px`;
+    cursorDot.style.top = `${e.clientY - rect.top}px`;
+  });
+
+  strokeSizeSelect.addEventListener('change', updateCursorDotSize);
+
+  // --- COLOR PALETTE (8 Colors) ---
   const colorGrid = document.getElementById('color-grid');
   DEFAULT_COLORS.forEach((color, index) => {
     const btn = document.createElement('button');
@@ -226,32 +303,33 @@
       document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('selected'));
       btn.classList.add('selected');
       selectedColor = color;
+      updateCursorDotSize();
     };
     colorGrid.appendChild(btn);
   });
+  updateCursorDotSize();
 
   socket.on('connect', () => { myId = socket.id; });
 
   // --- LOBBY ACTIONS ---
   document.getElementById('join-btn').onclick = () => {
     initAudio();
-    const playerName = document.getElementById('player-name').value.trim();
+    const playerName = nameInput.value.trim();
     const roomId = document.getElementById('room-id').value.trim();
     if (!playerName || !roomId) return;
 
+    localStorage.setItem('fake_artist_player_name', playerName);
     socket.emit('join_room', { roomId, playerName });
     document.getElementById('lobby-waiting').style.display = 'flex';
   };
 
-  document.getElementById('start-btn').onclick = () => {
-    socket.emit('start_game');
-  };
+  document.getElementById('start-btn').onclick = () => { socket.emit('start_game'); };
 
   socket.on('room_updated', (room) => {
     const list = document.getElementById('player-list');
     list.innerHTML = '';
     room.players.forEach(p => {
-      list.innerHTML += `<div class="player-badge"><span>${p.name}</span></div>`;
+      list.innerHTML += `<div class="sidebar-player"><span>${p.name}</span></div>`;
     });
 
     const isHost = room.players[0] && room.players[0].id === myId;
@@ -260,7 +338,7 @@
     startBtn.disabled = room.players.length < 3;
   });
 
-  // --- GAMEPLAY SETUP ---
+  // --- GAME START & COUNTDOWN ---
   socket.on('role_assignment', ({ role, word }) => {
     const banner = document.getElementById('role-banner');
     if (role === 'IMPOSTER') {
@@ -272,32 +350,65 @@
     }
   });
 
-  socket.on('game_started', (roomState) => {
+  socket.on('pre_game_countdown', () => {
     lobbyScreen.classList.remove('active');
+    pregameScreen.classList.add('active');
+
+    playStartCountdownAudio();
+    let count = 3;
+    const elem = document.getElementById('pregame-timer');
+    elem.innerText = count;
+
+    const timer = setInterval(() => {
+      count--;
+      if (count > 0) elem.innerText = count;
+      if (count <= 0) clearInterval(timer);
+    }, 1000);
+  });
+
+  socket.on('game_started', (roomState) => {
+    pregameScreen.classList.remove('active');
     gameScreen.classList.add('active');
 
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    updateTurnUI(roomState.currentTurnPlayerId);
+    
+    updateTurnUI(roomState.currentTurnPlayerId, null, roomState.players);
   });
 
-  socket.on('turn_changed', ({ currentTurnPlayerId, currentTurnName }) => {
-    updateTurnUI(currentTurnPlayerId, currentTurnName);
+  socket.on('turn_changed', ({ currentTurnPlayerId, currentTurnName, players }) => {
+    updateTurnUI(currentTurnPlayerId, currentTurnName, players);
   });
 
-  function updateTurnUI(playerId, playerName) {
+  function updateTurnUI(playerId, playerName, players) {
     currentTurnPlayerId = playerId;
     const indicator = document.getElementById('turn-indicator');
     
     if (playerId === myId) {
       indicator.innerText = "YOUR TURN! Draw your line.";
-      indicator.style.color = "#22c55e";
+      indicator.style.color = "var(--success)";
       canvasWrapper.classList.add('your-turn');
       playTurnSound();
     } else {
       indicator.innerText = `${playerName || 'Another player'}'s turn to draw...`;
       indicator.style.color = "#38bdf8";
       canvasWrapper.classList.remove('your-turn');
+    }
+
+    // Render Side Panel Player List in Turn Order
+    if (players) {
+      const sidebar = document.getElementById('sidebar-players');
+      sidebar.innerHTML = '';
+      players.forEach(p => {
+        const isCurrent = p.id === playerId;
+        const isDead = !p.isAlive;
+        sidebar.innerHTML += `
+          <div class="sidebar-player ${isCurrent ? 'turn' : ''} ${isDead ? 'dead' : ''}">
+            <span>${p.name}</span>
+            <small>${isDead ? 'OUT' : (isCurrent ? 'DRAWING' : '')}</small>
+          </div>
+        `;
+      });
     }
   }
 
@@ -306,14 +417,13 @@
     if (currentTurnPlayerId !== myId) return;
     initAudio();
     
-    // Save image snapshot before drawing begins
     canvasSnapshot = ctx.getImageData(0, 0, canvas.width, canvas.height);
 
     isDrawing = true;
     strokePoints = [getCoords(e)];
     ctx.beginPath();
     ctx.strokeStyle = selectedColor;
-    ctx.lineWidth = document.getElementById('stroke-size-select').value;
+    ctx.lineWidth = strokeSizeSelect.value;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     ctx.moveTo(strokePoints[0].x, strokePoints[0].y);
@@ -347,10 +457,7 @@
     }
 
     if (length < MIN_LINE_LENGTH) {
-      // Revert canvas state to snapshot (deletes invalid short line)
-      if (canvasSnapshot) {
-        ctx.putImageData(canvasSnapshot, 0, 0);
-      }
+      if (canvasSnapshot) ctx.putImageData(canvasSnapshot, 0, 0);
 
       playErrorSound();
       canvasWrapper.classList.add('flash-error');
@@ -364,12 +471,11 @@
       socket.emit('submit_stroke', {
         points: strokePoints,
         color: selectedColor,
-        width: document.getElementById('stroke-size-select').value
+        width: strokeSizeSelect.value
       });
     }
   }
 
-  // Broadcasted Stroke Receive
   socket.on('draw_stroke', (data) => {
     ctx.beginPath();
     ctx.strokeStyle = data.color;
@@ -383,7 +489,6 @@
     }
     ctx.stroke();
 
-    // Spawn Particles & Notification if drawn by another player
     if (data.painterId !== myId) {
       showNotification(`${data.painterName} finished drawing!`);
       const lastPt = data.points[data.points.length - 1];
@@ -397,7 +502,6 @@
     setTimeout(() => notifyBanner.classList.remove('show'), 2500);
   }
 
-  // Particles FX
   function spawnParticleBurst(x, y, color) {
     const particles = [];
     for (let i = 0; i < 20; i++) {
@@ -437,7 +541,7 @@
     renderFX();
   }
 
-  // --- INTERMISSION & VOTING PHASES ---
+  // --- VOTING & REVEAL PHASES ---
   socket.on('start_intermission', () => {
     gameScreen.classList.remove('active');
     intermissionScreen.classList.add('active');
@@ -476,7 +580,6 @@
     skipBtn.onclick = () => castVote('SKIP');
     grid.appendChild(skipBtn);
 
-    // 120s Timer Display
     let timeLeft = 120;
     const timerElem = document.getElementById('vote-timer');
     timerElem.innerText = `Time Left: ${timeLeft}s`;
@@ -503,22 +606,42 @@
     alert(message);
   });
 
-  socket.on('next_round', ({ currentTurnPlayerId, currentTurnName }) => {
+  socket.on('next_round', ({ currentTurnPlayerId, currentTurnName, players }) => {
     voteScreen.classList.remove('active');
     gameScreen.classList.add('active');
-    updateTurnUI(currentTurnPlayerId, currentTurnName);
+    updateTurnUI(currentTurnPlayerId, currentTurnName, players);
   });
 
-  socket.on('game_over', ({ winner, message }) => {
+  // Reveal Screen & Outcome Audio
+  socket.on('game_over', ({ winner, imposterName, secretWord, message }) => {
     clearInterval(voteTimerInterval);
     voteScreen.classList.remove('active');
     gameScreen.classList.remove('active');
     gameoverScreen.classList.add('active');
 
     const title = document.getElementById('gameover-title');
-    title.innerText = winner === 'IMPOSTER' ? 'Imposter Wins!' : 'Artists Win!';
-    title.style.color = winner === 'IMPOSTER' ? 'var(--danger)' : '#38bdf8';
+    const winnerText = document.getElementById('reveal-winner-text');
+    const details = document.getElementById('reveal-details');
+
+    if (winner === 'ARTISTS') {
+      playVictorySound();
+      title.innerText = "VICTORY!";
+      title.style.color = "var(--success)";
+      winnerText.innerText = "The Artists Win!";
+      winnerText.style.color = "var(--success)";
+    } else {
+      playDefeatSound();
+      title.innerText = "DEFEAT!";
+      title.style.color = "var(--danger)";
+      winnerText.innerText = "The Imposter Wins!";
+      winnerText.style.color = "var(--danger)";
+    }
+
     document.getElementById('gameover-msg').innerText = message;
+    details.innerHTML = `
+      <p><strong>Imposter:</strong> <span style="color:var(--danger);">${imposterName}</span></p>
+      <p style="margin-top:0.3rem;"><strong>Secret Word:</strong> <span style="color:#38bdf8;">${secretWord}</span></p>
+    `;
   });
 </script>
 

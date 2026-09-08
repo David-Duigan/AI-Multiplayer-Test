@@ -44,7 +44,7 @@ io.on('connection', (socket) => {
     const room = rooms[currentRoom];
     if (!room || room.players.length < 3 || room.state !== 'LOBBY') return;
 
-    room.state = 'DRAWING';
+    room.state = 'STARTING';
     room.secretWord = WORDS[Math.floor(Math.random() * WORDS.length)];
     const imposterIndex = Math.floor(Math.random() * room.players.length);
     room.imposterId = room.players[imposterIndex].id;
@@ -58,7 +58,14 @@ io.on('connection', (socket) => {
       });
     });
 
-    io.to(currentRoom).emit('game_started', getPublicRoomState(room));
+    // Notify all clients to show 3s countdown
+    io.to(currentRoom).emit('pre_game_countdown');
+
+    setTimeout(() => {
+      if (!rooms[currentRoom]) return;
+      room.state = 'DRAWING';
+      io.to(currentRoom).emit('game_started', getPublicRoomState(room));
+    }, 3000);
   });
 
   socket.on('submit_stroke', (strokeData) => {
@@ -68,9 +75,8 @@ io.on('connection', (socket) => {
     const activePlayers = room.players.filter(p => p.isAlive);
     const currentPlayer = activePlayers[room.currentTurnIndex];
 
-    if (socket.id !== currentPlayer.id) return;
+    if (!currentPlayer || socket.id !== currentPlayer.id) return;
 
-    // Broadcast stroke to all players
     io.to(currentRoom).emit('draw_stroke', {
       ...strokeData,
       painterName: currentPlayer.name,
@@ -83,7 +89,8 @@ io.on('connection', (socket) => {
     } else {
       io.to(currentRoom).emit('turn_changed', {
         currentTurnPlayerId: activePlayers[room.currentTurnIndex].id,
-        currentTurnName: activePlayers[room.currentTurnIndex].name
+        currentTurnName: activePlayers[room.currentTurnIndex].name,
+        players: room.players
       });
     }
   });
@@ -111,7 +118,6 @@ function initiateVotingIntermission(room) {
   room.state = 'INTERMISSION';
   io.to(room.id).emit('start_intermission');
 
-  // Wait 3 seconds before moving to voting phase
   setTimeout(() => {
     if (rooms[room.id]) startVotingPhase(room);
   }, 3000);
@@ -125,11 +131,9 @@ function startVotingPhase(room) {
   const alivePlayers = room.players.filter(p => p.isAlive);
   io.to(room.id).emit('start_voting', { alivePlayers });
 
-  // 120-second voting timer
   if (room.voteTimer) clearTimeout(room.voteTimer);
   room.voteTimer = setTimeout(() => {
     if (!rooms[room.id] || room.state !== 'VOTING') return;
-    // Auto-skip for players who did not vote
     alivePlayers.forEach(p => {
       if (!room.votedPlayers.has(p.id)) {
         recordUserVote(room, p.id, 'SKIP');
@@ -188,7 +192,9 @@ function processVotes(room) {
       room.state = 'GAMEOVER';
       io.to(room.id).emit('game_over', {
         winner: 'ARTISTS',
-        message: `The Imposter (${imposterPlayer.name}) was caught! Artists win!`
+        imposterName: imposterPlayer.name,
+        secretWord: room.secretWord,
+        message: `The Imposter (${imposterPlayer.name}) was caught!`
       });
     } else {
       const alivePlayers = room.players.filter(p => p.isAlive);
@@ -196,7 +202,9 @@ function processVotes(room) {
         room.state = 'GAMEOVER';
         io.to(room.id).emit('game_over', {
           winner: 'IMPOSTER',
-          message: `Only 2 players left! Imposter (${imposterPlayer.name}) wins! Secret word was: ${room.secretWord}`
+          imposterName: imposterPlayer.name,
+          secretWord: room.secretWord,
+          message: `Only 2 players left! Imposter (${imposterPlayer.name}) wins!`
         });
       } else {
         io.to(room.id).emit('vote_result', {
@@ -216,7 +224,8 @@ function nextRound(room) {
 
   io.to(room.id).emit('next_round', {
     currentTurnPlayerId: activePlayers[0].id,
-    currentTurnName: activePlayers[0].name
+    currentTurnName: activePlayers[0].name,
+    players: room.players
   });
 }
 
@@ -230,4 +239,4 @@ function getPublicRoomState(room) {
 }
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`Server online on port ${PORT}`));
+server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
