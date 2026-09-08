@@ -54,9 +54,10 @@ io.on('connection', (socket) => {
         imposterId: null,
         currentTurnIndex: 0,
         currentDrawingPass: 1,
-        totalPassesTarget: 2, // First voting takes 2 full drawing passes
+        totalPassesTarget: 2,
         hasVotedOnce: false,
-        votes: {},
+        votes: {},          // Map of targetId -> count
+        detailedVotes: [],  // List of { voterName, targetName }
         votedPlayers: new Set(),
         voteTimer: null
       };
@@ -98,7 +99,7 @@ io.on('connection', (socket) => {
     room.imposterId = room.players[imposterIndex].id;
     room.currentTurnIndex = 0;
     room.currentDrawingPass = 1;
-    room.totalPassesTarget = 2; // Initial requirement: 2 rounds
+    room.totalPassesTarget = 2;
     room.hasVotedOnce = false;
 
     room.players.forEach(p => {
@@ -136,10 +137,8 @@ io.on('connection', (socket) => {
 
     room.currentTurnIndex++;
     
-    // Check if everyone has completed their stroke for the current pass
     if (room.currentTurnIndex >= activePlayers.length) {
       if (room.currentDrawingPass < room.totalPassesTarget) {
-        // Increment drawing pass and reset turn loop
         room.currentDrawingPass++;
         room.currentTurnIndex = 0;
         
@@ -151,7 +150,6 @@ io.on('connection', (socket) => {
           players: room.players
         });
       } else {
-        // Target drawing rounds met -> trigger voting
         initiateVotingIntermission(room);
       }
     } else {
@@ -200,6 +198,7 @@ function initiateVotingIntermission(room) {
 function startVotingPhase(room) {
   room.state = 'VOTING';
   room.votes = {};
+  room.detailedVotes = [];
   room.votedPlayers = new Set();
 
   const alivePlayers = room.players.filter(p => p.isAlive);
@@ -221,6 +220,14 @@ function recordUserVote(room, voterId, targetId) {
 
   room.votedPlayers.add(voterId);
   room.votes[targetId] = (room.votes[targetId] || 0) + 1;
+
+  const voter = room.players.find(p => p.id === voterId);
+  const target = room.players.find(p => p.id === targetId);
+
+  room.detailedVotes.push({
+    voterName: voter ? voter.name : 'Unknown',
+    targetName: target ? target.name : 'Skipped Vote'
+  });
 
   const alivePlayers = room.players.filter(p => p.isAlive);
   
@@ -251,13 +258,15 @@ function processVotes(room) {
   }
 
   const imposterPlayer = room.players.find(p => p.id === room.imposterId);
+  let resultPayload = null;
 
   if (isTie || votedOutId === 'SKIP' || !votedOutId) {
-    io.to(room.id).emit('vote_result', {
+    resultPayload = {
       outcome: 'SKIP',
-      message: 'Voting resulted in a skip or tie! No one was eliminated.'
-    });
-    nextRound(room);
+      message: 'Voting resulted in a skip or tie! No one was eliminated.',
+      detailedVotes: room.detailedVotes,
+      nextAction: 'ROUND'
+    };
   } else {
     const eliminated = room.players.find(p => p.id === votedOutId);
     eliminated.isAlive = false;
@@ -266,39 +275,57 @@ function processVotes(room) {
 
     if (votedOutId === room.imposterId) {
       room.state = 'GAMEOVER';
-      io.to(room.id).emit('game_over', {
-        winner: 'ARTISTS',
-        imposterName: imposterPlayer.name,
-        secretWord: room.secretWord,
-        message: `The Imposter (${imposterPlayer.name}) was caught!`
-      });
+      resultPayload = {
+        outcome: 'ELIMINATED',
+        detailedVotes: room.detailedVotes,
+        nextAction: 'GAMEOVER',
+        gameOverData: {
+          winner: 'ARTISTS',
+          imposterName: imposterPlayer.name,
+          secretWord: room.secretWord,
+          message: `The Imposter (${imposterPlayer.name}) was caught!`
+        }
+      };
     } else {
       const alivePlayers = room.players.filter(p => p.isAlive);
       if (alivePlayers.length <= 2) {
         room.state = 'GAMEOVER';
-        io.to(room.id).emit('game_over', {
-          winner: 'IMPOSTER',
-          imposterName: imposterPlayer.name,
-          secretWord: room.secretWord,
-          message: `Only 2 players left! Imposter (${imposterPlayer.name}) wins!`
-        });
-      } else {
-        io.to(room.id).emit('vote_result', {
+        resultPayload = {
           outcome: 'ELIMINATED',
-          message: `${eliminated.name} was NOT the imposter!`
-        });
-        nextRound(room);
+          detailedVotes: room.detailedVotes,
+          nextAction: 'GAMEOVER',
+          gameOverData: {
+            winner: 'IMPOSTER',
+            imposterName: imposterPlayer.name,
+            secretWord: room.secretWord,
+            message: `Only 2 players left! Imposter (${imposterPlayer.name}) wins!`
+          }
+        };
+      } else {
+        resultPayload = {
+          outcome: 'ELIMINATED',
+          message: `${eliminated.name} was NOT the imposter!`,
+          detailedVotes: room.detailedVotes,
+          nextAction: 'ROUND'
+        };
       }
     }
   }
+
+  // Broadcast animation reveal before applying next step
+  io.to(room.id).emit('reveal_votes_animation', resultPayload);
 }
+
+socket.on('continue_after_vote_reveal', (payload) => {
+  // Handled on client after delay or server timeout
+});
 
 function nextRound(room) {
   room.state = 'DRAWING';
   room.currentTurnIndex = 0;
   room.currentDrawingPass = 1;
   room.hasVotedOnce = true;
-  room.totalPassesTarget = 1; // All subsequent voting rounds take only 1 drawing pass
+  room.totalPassesTarget = 1;
 
   const activePlayers = room.players.filter(p => p.isAlive);
 
@@ -309,18 +336,6 @@ function nextRound(room) {
     totalPassesTarget: room.totalPassesTarget,
     players: room.players
   });
-}
-
-function getPublicRoomState(room) {
-  return {
-    id: room.id,
-    players: room.players,
-    state: room.state,
-    imposterId: room.imposterId,
-    currentDrawingPass: room.currentDrawingPass,
-    totalPassesTarget: room.totalPassesTarget,
-    currentTurnPlayerId: room.players.filter(p => p.isAlive)[room.currentTurnIndex]?.id
-  };
 }
 
 const PORT = process.env.PORT || 3000;

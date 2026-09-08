@@ -73,11 +73,34 @@
     .canvas-preview-container { text-align: center; margin-bottom: 0.5rem; background: #0f172a; padding: 1rem; border-radius: 8px; border: 1px solid #334155; }
     .canvas-preview-container img { max-width: 100%; max-height: 320px; border-radius: 6px; border: 2px solid #475569; background: #ffffff; object-fit: contain; }
     .round-pill { background: #475569; color: #38bdf8; padding: 2px 8px; border-radius: 12px; font-size: 0.85rem; font-weight: bold; margin-left: 8px; }
+
+    /* ANIMATED VOTE REVEAL OVERLAY */
+    #vote-reveal-overlay {
+      position: fixed; inset: 0; background: rgba(15, 23, 42, 0.95);
+      z-index: 200; display: none; flex-direction: column; align-items: center; justify-content: center;
+      padding: 2rem; backdrop-filter: blur(8px);
+    }
+    #vote-reveal-overlay.active { display: flex; }
+    .vote-reveal-container { display: flex; flex-direction: column; gap: 1rem; max-width: 600px; width: 100%; }
+    .vote-item-card {
+      background: #1e293b; border: 2px solid #38bdf8; border-radius: 10px; padding: 1rem 1.5rem;
+      display: flex; justify-content: space-between; align-items: center; font-size: 1.2rem; font-weight: bold;
+      opacity: 0; transform: translateY(20px); transition: all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+    .vote-item-card.visible { opacity: 1; transform: translateY(0); }
+    .vote-arrow { color: #eab308; margin: 0 10px; }
+    .vote-target { color: #ef4444; }
   </style>
 </head>
 <body>
 
 <div id="notify-banner" class="notify-banner">Player finished drawing!</div>
+
+<!-- ANIMATED VOTE REVEAL OVERLAY -->
+<div id="vote-reveal-overlay">
+  <h1 style="color: #38bdf8; margin-bottom: 2rem; font-size: 2.2rem;">Vote Breakdown</h1>
+  <div class="vote-reveal-container" id="vote-reveal-list"></div>
+</div>
 
 <div class="container">
 
@@ -667,9 +690,44 @@
     document.getElementById('vote-status').innerText = `Votes gathered: ${votedCount} / ${totalCount}`;
   });
 
-  socket.on('vote_result', ({ message }) => {
+  // ANIMATED VOTE REVEAL OVERLAY LOGIC
+  socket.on('reveal_votes_animation', (resultPayload) => {
     clearInterval(voteTimerInterval);
-    alert(message);
+    const overlay = document.getElementById('vote-reveal-overlay');
+    const list = document.getElementById('vote-reveal-list');
+    list.innerHTML = '';
+    overlay.classList.add('active');
+
+    const votes = resultPayload.detailedVotes || [];
+    let delay = 300;
+
+    votes.forEach((v, idx) => {
+      const card = document.createElement('div');
+      card.className = 'vote-item-card';
+      card.innerHTML = `
+        <span>${v.voterName}</span>
+        <span class="vote-arrow">➔ voted ➔</span>
+        <span class="vote-target">${v.targetName}</span>
+      `;
+      list.appendChild(card);
+
+      setTimeout(() => {
+        card.classList.add('visible');
+        playTurnSound();
+      }, delay * (idx + 1));
+    });
+
+    const totalAnimTime = delay * (votes.length + 1) + 2500;
+
+    setTimeout(() => {
+      overlay.classList.remove('active');
+      if (resultPayload.message) alert(resultPayload.message);
+
+      if (resultPayload.nextAction === 'GAMEOVER') {
+        socket.emit('trigger_gameover_display', resultPayload.gameOverData);
+        triggerGameOver(resultPayload.gameOverData);
+      }
+    }, totalAnimTime);
   });
 
   socket.on('next_round', ({ currentTurnPlayerId, currentTurnName, currentDrawingPass, totalPassesTarget, players }) => {
@@ -678,7 +736,11 @@
     updateTurnUI(currentTurnPlayerId, currentTurnName, currentDrawingPass, totalPassesTarget, players);
   });
 
-  socket.on('game_over', ({ winner, imposterName, secretWord, message }) => {
+  socket.on('game_over', (data) => {
+    triggerGameOver(data);
+  });
+
+  function triggerGameOver({ winner, imposterName, secretWord, message }) {
     clearInterval(voteTimerInterval);
     voteScreen.classList.remove('active');
     gameScreen.classList.remove('active');
@@ -707,7 +769,7 @@
       <p><strong>Imposter:</strong> <span style="color:var(--danger);">${imposterName}</span></p>
       <p style="margin-top:0.3rem;"><strong>Secret Word:</strong> <span style="color:#38bdf8;">${secretWord}</span></p>
     `;
-  });
+  }
 </script>
 
 </body>
