@@ -8,34 +8,26 @@ const io = new Server(server, { cors: { origin: "*" } });
 
 app.use(express.static('public'));
 
-// 100+ Categorized Secret Words
 const WORDS = [
-  // Animals & Nature
   'Banana', 'Airplane', 'Guitar', 'Elephant', 'Pizza', 'House', 'Bicycle', 'Cat', 'Spider', 'Carrot', 
   'Crown', 'Sun', 'Tree', 'Smartphone', 'Glasses', 'Dog', 'Penguin', 'Giraffe', 'Dolphin', 'Lion', 
   'Tiger', 'Octopus', 'Kangaroo', 'Flamingo', 'Owl', 'Panda', 'Koala', 'Dragon', 'Unicorn', 'Flower', 
   'Mushroom', 'Cactus', 'Volcano', 'Rainbow', 'Mountain', 'Waterfall', 'Forest', 'Island', 'Tornado', 'Starfish',
-  // Food & Drinks
   'Hamburger', 'Hotdog', 'Sushi', 'Taco', 'Donut', 'Ice Cream', 'Popcorn', 'Watermelon', 'Pineapple', 'Strawberry',
   'Cookie', 'Cupcake', 'Pancake', 'Waffle', 'Avocado', 'Broccoli', 'Cheese', 'Pretzel', 'Coffee Cup', 'Boba Tea',
-  // Everyday Objects & Tools
   'Backpack', 'Umbrella', 'Scissors', 'Key', 'Lock', 'Toothbrush', 'Flashlight', 'Compass', 'Hourglass', 'Telescope',
   'Microscope', 'Clock', 'Headphones', 'Laptop', 'Camera', 'Television', 'Microwave', 'Toaster', 'Candle', 'Anchor',
-  // Transportation & Buildings
   'Helicopter', 'Submarine', 'Rocket', 'Train', 'Bus', 'Motorcycle', 'Sailboat', 'Hot Air Balloon', 'Skateboard', 'Tractor',
   'Castle', 'Lighthouse', 'Pyramid', 'Windmill', 'Igloo', 'Bridge', 'Skyscraper', 'Barn', 'Statue of Liberty', 'Ferris Wheel',
-  // Fantasy & Media
   'Wizard Hat', 'Treasure Chest', 'Pirate Ship', 'Robot', 'Alien', 'Ghost', 'Sword', 'Shield', 'Magic Wand', 'Superhero',
   'Space Shuttle', 'Guitar', 'Drums', 'Violin', 'Piano', 'Basketball', 'Soccer Ball', 'Bowling Pin', 'Trophy', 'Crown'
 ];
 
-// Shuffled deck to guarantee non-repeating word draws across games
 let unusedWordDeck = [];
 
 function getNextSecretWord() {
   if (unusedWordDeck.length === 0) {
     unusedWordDeck = [...WORDS];
-    // Fisher-Yates Shuffle
     for (let i = unusedWordDeck.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [unusedWordDeck[i], unusedWordDeck[j]] = [unusedWordDeck[j], unusedWordDeck[i]];
@@ -61,6 +53,9 @@ io.on('connection', (socket) => {
         secretWord: '',
         imposterId: null,
         currentTurnIndex: 0,
+        currentDrawingPass: 1,
+        totalPassesTarget: 2, // First voting takes 2 full drawing passes
+        hasVotedOnce: false,
         votes: {},
         votedPlayers: new Set(),
         voteTimer: null
@@ -102,6 +97,9 @@ io.on('connection', (socket) => {
     const imposterIndex = Math.floor(Math.random() * room.players.length);
     room.imposterId = room.players[imposterIndex].id;
     room.currentTurnIndex = 0;
+    room.currentDrawingPass = 1;
+    room.totalPassesTarget = 2; // Initial requirement: 2 rounds
+    room.hasVotedOnce = false;
 
     room.players.forEach(p => {
       const isImposter = (p.id === room.imposterId);
@@ -137,12 +135,31 @@ io.on('connection', (socket) => {
     });
 
     room.currentTurnIndex++;
+    
+    // Check if everyone has completed their stroke for the current pass
     if (room.currentTurnIndex >= activePlayers.length) {
-      initiateVotingIntermission(room);
+      if (room.currentDrawingPass < room.totalPassesTarget) {
+        // Increment drawing pass and reset turn loop
+        room.currentDrawingPass++;
+        room.currentTurnIndex = 0;
+        
+        io.to(currentRoom).emit('pass_changed', {
+          currentTurnPlayerId: activePlayers[0].id,
+          currentTurnName: activePlayers[0].name,
+          currentDrawingPass: room.currentDrawingPass,
+          totalPassesTarget: room.totalPassesTarget,
+          players: room.players
+        });
+      } else {
+        // Target drawing rounds met -> trigger voting
+        initiateVotingIntermission(room);
+      }
     } else {
       io.to(currentRoom).emit('turn_changed', {
         currentTurnPlayerId: activePlayers[room.currentTurnIndex].id,
         currentTurnName: activePlayers[room.currentTurnIndex].name,
+        currentDrawingPass: room.currentDrawingPass,
+        totalPassesTarget: room.totalPassesTarget,
         players: room.players
       });
     }
@@ -279,11 +296,17 @@ function processVotes(room) {
 function nextRound(room) {
   room.state = 'DRAWING';
   room.currentTurnIndex = 0;
+  room.currentDrawingPass = 1;
+  room.hasVotedOnce = true;
+  room.totalPassesTarget = 1; // All subsequent voting rounds take only 1 drawing pass
+
   const activePlayers = room.players.filter(p => p.isAlive);
 
   io.to(room.id).emit('next_round', {
     currentTurnPlayerId: activePlayers[0].id,
     currentTurnName: activePlayers[0].name,
+    currentDrawingPass: room.currentDrawingPass,
+    totalPassesTarget: room.totalPassesTarget,
     players: room.players
   });
 }
@@ -294,6 +317,8 @@ function getPublicRoomState(room) {
     players: room.players,
     state: room.state,
     imposterId: room.imposterId,
+    currentDrawingPass: room.currentDrawingPass,
+    totalPassesTarget: room.totalPassesTarget,
     currentTurnPlayerId: room.players.filter(p => p.isAlive)[room.currentTurnIndex]?.id
   };
 }

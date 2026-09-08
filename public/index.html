@@ -39,7 +39,6 @@
     .sidebar-player.dead { opacity: 0.4; text-decoration: line-through; background: #0f172a; border-left-color: var(--danger); }
     .sidebar-player .imposter-badge { background: var(--danger); color: white; font-size: 0.7rem; padding: 2px 6px; border-radius: 4px; text-decoration: none; font-weight: bold; }
 
-    /* Enlarged Paper Canvas (1200x700) */
     .canvas-wrapper { position: relative; border: 3px solid #475569; border-radius: 8px; overflow: hidden; background: #ffffff; width: 100%; display: flex; justify-content: center; transition: border-color 0.3s, box-shadow 0.3s; }
     .canvas-wrapper.your-turn { border-color: var(--success); box-shadow: 0 0 25px rgba(34, 197, 94, 0.4); }
     canvas#paint-canvas { display: block; cursor: none; }
@@ -73,6 +72,7 @@
 
     .canvas-preview-container { text-align: center; margin-bottom: 0.5rem; background: #0f172a; padding: 1rem; border-radius: 8px; border: 1px solid #334155; }
     .canvas-preview-container img { max-width: 100%; max-height: 320px; border-radius: 6px; border: 2px solid #475569; background: #ffffff; object-fit: contain; }
+    .round-pill { background: #475569; color: #38bdf8; padding: 2px 8px; border-radius: 12px; font-size: 0.85rem; font-weight: bold; margin-left: 8px; }
   </style>
 </head>
 <body>
@@ -113,10 +113,12 @@
   <!-- GAMEPLAY SCREEN WITH SIDEBAR -->
   <div id="game-screen" class="screen">
     <div class="role-banner" id="role-banner">Secret Word: Loading...</div>
-    <div style="text-align: center; font-size: 1.1rem; color: #38bdf8;" id="turn-indicator">Waiting for turn...</div>
+    <div style="text-align: center; font-size: 1.1rem; color: #38bdf8; display: flex; justify-content: center; align-items: center;">
+      <span id="turn-indicator">Waiting for turn...</span>
+      <span id="pass-indicator" class="round-pill">Drawing Round 1 of 2</span>
+    </div>
 
     <div class="gameplay-layout">
-      <!-- Expanded Canvas Section (1200x700) -->
       <div class="canvas-section">
         <div class="canvas-wrapper" id="canvas-wrapper">
           <div id="toast" class="toast">Line too short! Min length is 45px.</div>
@@ -154,7 +156,7 @@
 
   <!-- VOTING INTERMISSION -->
   <div id="intermission-screen" class="screen" style="text-align: center; padding: 4rem 1rem; position: relative;">
-    <h1 style="font-size: 2.8rem; color: #38bdf8;">Round Complete!</h1>
+    <h1 style="font-size: 2.8rem; color: #38bdf8;">Drawing Phase Complete!</h1>
     <p style="color: var(--subtext); font-size: 1.2rem; margin-top: 1rem;">Take 5 seconds to inspect the final drawing before voting...</p>
     <div class="countdown-widget" id="intermission-timer">Voting in: 5s</div>
   </div>
@@ -210,7 +212,6 @@
 
   let voteTimerInterval = null;
 
-  // DOM Elements
   const lobbyScreen = document.getElementById('lobby-screen');
   const joinControls = document.getElementById('join-controls');
   const joinBtn = document.getElementById('join-btn');
@@ -412,16 +413,24 @@
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     
-    updateTurnUI(roomState.currentTurnPlayerId, null, roomState.players);
+    updateTurnUI(roomState.currentTurnPlayerId, null, roomState.currentDrawingPass, roomState.totalPassesTarget, roomState.players);
   });
 
-  socket.on('turn_changed', ({ currentTurnPlayerId, currentTurnName, players }) => {
-    updateTurnUI(currentTurnPlayerId, currentTurnName, players);
+  socket.on('turn_changed', ({ currentTurnPlayerId, currentTurnName, currentDrawingPass, totalPassesTarget, players }) => {
+    updateTurnUI(currentTurnPlayerId, currentTurnName, currentDrawingPass, totalPassesTarget, players);
   });
 
-  function updateTurnUI(playerId, playerName, players) {
+  socket.on('pass_changed', ({ currentTurnPlayerId, currentTurnName, currentDrawingPass, totalPassesTarget, players }) => {
+    showNotification(`Round ${currentDrawingPass} of ${totalPassesTarget} started!`);
+    updateTurnUI(currentTurnPlayerId, currentTurnName, currentDrawingPass, totalPassesTarget, players);
+  });
+
+  function updateTurnUI(playerId, playerName, currentPass, totalTarget, players) {
     currentTurnPlayerId = playerId;
     const indicator = document.getElementById('turn-indicator');
+    const passIndicator = document.getElementById('pass-indicator');
+
+    passIndicator.innerText = `Drawing Round ${currentPass} of ${totalTarget}`;
     
     if (playerId === myId && !isEliminated) {
       indicator.innerText = "YOUR TURN! Draw your line.";
@@ -586,7 +595,7 @@
 
   socket.on('start_intermission', ({ delaySeconds }) => {
     let count = delaySeconds || 5;
-    showNotification(`Round Complete! Reviewing drawing... (${count}s)`);
+    showNotification(`Drawing phase complete! Inspect canvas... (${count}s)`);
 
     setTimeout(() => {
       gameScreen.classList.remove('active');
@@ -663,10 +672,10 @@
     alert(message);
   });
 
-  socket.on('next_round', ({ currentTurnPlayerId, currentTurnName, players }) => {
+  socket.on('next_round', ({ currentTurnPlayerId, currentTurnName, currentDrawingPass, totalPassesTarget, players }) => {
     voteScreen.classList.remove('active');
     gameScreen.classList.add('active');
-    updateTurnUI(currentTurnPlayerId, currentTurnName, players);
+    updateTurnUI(currentTurnPlayerId, currentTurnName, currentDrawingPass, totalPassesTarget, players);
   });
 
   socket.on('game_over', ({ winner, imposterName, secretWord, message }) => {
