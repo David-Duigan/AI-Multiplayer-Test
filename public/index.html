@@ -7,61 +7,44 @@
     <style>
         * { box-sizing: border-box; user-select: none; }
         html, body {
-            margin: 0; padding: 0;
-            width: 100vw; height: 100vh;
+            margin: 0; padding: 0; width: 100vw; height: 100vh;
             background: #050608; color: #fff;
             font-family: 'Segoe UI', system-ui, sans-serif;
             overflow: hidden; display: flex; align-items: center; justify-content: center;
         }
-
         #ui-overlay {
-            position: absolute; top: 20px; left: 50%;
-            transform: translateX(-50%);
+            position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
             display: flex; gap: 15px; z-index: 100;
-            background: rgba(12, 16, 26, 0.85);
-            padding: 12px 24px; border-radius: 12px;
-            border: 1px solid rgba(0, 240, 255, 0.3);
-            box-shadow: 0 0 25px rgba(0, 240, 255, 0.2);
-            backdrop-filter: blur(10px);
+            background: rgba(12, 16, 26, 0.85); padding: 12px 24px; border-radius: 12px;
+            border: 1px solid rgba(0, 240, 255, 0.3); backdrop-filter: blur(10px);
         }
-
         input {
-            background: #0a0d14; color: #00f0ff;
-            border: 1px solid #1e293b; padding: 10px 16px;
-            border-radius: 6px; font-size: 16px; outline: none;
+            background: #0a0d14; color: #00f0ff; border: 1px solid #1e293b;
+            padding: 10px 16px; border-radius: 6px; font-size: 16px; outline: none;
             text-transform: uppercase; font-weight: bold;
         }
-
         button {
-            background: linear-gradient(135deg, #00f0ff, #0088ff);
-            color: #000; font-weight: 800; border: none;
-            padding: 10px 20px; border-radius: 6px; font-size: 15px;
+            background: linear-gradient(135deg, #00f0ff, #0088ff); color: #000;
+            font-weight: 800; border: none; padding: 10px 20px; border-radius: 6px;
             cursor: pointer; transition: all 0.2s ease;
         }
-
         #scoreboard {
             position: absolute; top: 20px; right: 20px; z-index: 90;
-            background: rgba(10, 14, 23, 0.8);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            padding: 15px 20px; border-radius: 10px; backdrop-filter: blur(8px);
+            background: rgba(10, 14, 23, 0.8); border: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 15px 20px; border-radius: 10px; min-width: 180px;
         }
-
-        .score-row { display: flex; justify-content: space-between; font-weight: bold; margin-top: 6px; font-size: 14px; gap: 15px;}
-
+        .score-row { display: flex; justify-content: space-between; font-weight: bold; margin-top: 6px; }
         #crosshair {
-            position: absolute; width: 22px; height: 22px;
-            border: 2px solid #00f0ff; border-radius: 50%;
-            pointer-events: none; transform: translate(-50%, -50%);
+            position: absolute; width: 22px; height: 22px; border: 2px solid #00f0ff;
+            border-radius: 50%; pointer-events: none; transform: translate(-50%, -50%);
             z-index: 200; box-shadow: 0 0 12px #00f0ff;
         }
-
         canvas { display: block; width: 100vw; height: 100vh; cursor: none; }
     </style>
 </head>
 <body>
 
 <div id="crosshair"></div>
-
 <div id="ui-overlay">
     <input type="text" id="roomInput" placeholder="ROOM CODE" value="MATCH1" />
     <button onclick="joinRoom()">JOIN MATCH</button>
@@ -85,14 +68,13 @@
     let localPlayer = { x: 0, y: 0, angle: 0 };
     let serverPlayers = {};
     let interpolatedPlayers = {};
-    let localBullets = [];
-    let serverBullets = [];
+    let activeBullets = {}; // Rendered bullet map synced live with server
     let powerups = [];
     let obstacles = [];
     let particles = [];
+    let hazardAngle = 0;
     let keys = {};
     let mouse = { x: 0, y: 0 };
-    let lastDash = 0;
     let screenShake = 0;
 
     function resizeCanvas() {
@@ -111,53 +93,50 @@
         crosshair.style.top = `${e.clientY}px`;
     });
 
-    // Spawn locally FIRST, then emit to server
+    // Spawn locally instantly, then rely purely on server positions
     window.addEventListener('mousedown', () => {
         if (!myId || !serverPlayers[myId] || serverPlayers[myId].hp <= 0) return;
 
         const p = serverPlayers[myId];
         const angle = Math.atan2(mouse.y - localPlayer.y, mouse.x - localPlayer.x);
-        const speed = 20;
-        const newBullets = [];
-
+        const speed = 22;
         const isTriple = p.tripleTimer > Date.now();
+
         const angles = isTriple ? [angle - 0.2, angle, angle + 0.2] : [angle];
 
         angles.forEach(a => {
-            const bullet = {
-                id: Math.random().toString(36).substring(2, 9),
+            const bulletId = Math.random().toString(36).substr(2, 9);
+            const bulletData = {
+                id: bulletId,
+                owner: myId,
                 x: localPlayer.x + Math.cos(a) * 30,
                 y: localPlayer.y + Math.sin(a) * 30,
                 vx: Math.cos(a) * speed,
                 vy: Math.sin(a) * speed,
-                color: p.color,
-                life: 80
+                color: p.color
             };
-            localBullets.push(bullet);
-            newBullets.push(bullet);
+
+            // 1. Instantly store locally so it appears frame 1 at the local ship tip
+            activeBullets[bulletId] = bulletData;
+
+            // 2. Notify server to take over bullet trajectory and sync to all players
+            socket.emit('spawnBullet', bulletData);
         });
 
-        // Notify server to replicate for opponent screens
-        socket.emit('spawnLocalBullets', { bullets: newBullets });
         screenShake = 3;
     });
 
     function joinRoom() {
         const room = document.getElementById('roomInput').value.trim().toUpperCase();
-        if (room) {
-            socket.emit('joinGame', room);
-            document.getElementById('ui-overlay').style.opacity = '0.3';
-        }
+        if (room) socket.emit('joinGame', room);
     }
 
-    socket.on('initPlayer', (data) => {
-        myId = data.id;
-        obstacles = data.obstacles;
-    });
+    socket.on('initPlayer', (data) => myId = data.id);
 
     socket.on('roomState', (data) => {
         serverPlayers = data.players;
-        if (myId && serverPlayers[myId] && localPlayer.x === 0 && localPlayer.y === 0) {
+        obstacles = data.obstacles || [];
+        if (myId && serverPlayers[myId] && localPlayer.x === 0) {
             localPlayer.x = serverPlayers[myId].x;
             localPlayer.y = serverPlayers[myId].y;
         }
@@ -172,20 +151,25 @@
     });
 
     socket.on('impactEvent', (data) => {
-        screenShake = 8;
-        for (let i = 0; i < 12; i++) {
+        screenShake = 6;
+        for (let i = 0; i < 10; i++) {
             particles.push({
                 x: data.x, y: data.y,
-                vx: (Math.random() - 0.5) * 8, vy: (Math.random() - 0.5) * 8,
-                life: 20, color: data.color
+                vx: (Math.random() - 0.5) * 6, vy: (Math.random() - 0.5) * 6,
+                life: 15, color: data.color
             });
         }
     });
 
+    // Receive live server-driven position updates for ALL bullets
     socket.on('serverState', (data) => {
         serverPlayers = data.players;
-        serverBullets = data.bullets;
         powerups = data.powerups;
+        obstacles = data.obstacles;
+        hazardAngle = data.hazardAngle;
+
+        // Overwrite active bullets with official server live positions
+        activeBullets = data.bullets || {};
 
         Object.keys(serverPlayers).forEach(id => {
             if (!interpolatedPlayers[id]) interpolatedPlayers[id] = { ...serverPlayers[id] };
@@ -209,11 +193,6 @@
         const p = serverPlayers[myId];
         let speed = p.speedTimer > Date.now() ? 9 : 5.5;
 
-        if (keys['shift'] && Date.now() - lastDash > 1000) {
-            speed = 28;
-            lastDash = Date.now();
-        }
-
         let nextX = localPlayer.x;
         let nextY = localPlayer.y;
 
@@ -222,54 +201,20 @@
         if (keys['a'] || keys['arrowleft']) nextX -= speed;
         if (keys['d'] || keys['arrowright']) nextX += speed;
 
-        // Obstacle Collisions with Local Player
         obstacles.forEach(obs => {
-            if (Math.hypot(nextX - obs.x, nextY - obs.y) < obs.r + 20) {
-                const angle = Math.atan2(nextY - obs.y, nextX - obs.x);
-                nextX = obs.x + Math.cos(angle) * (obs.r + 20);
-                nextY = obs.y + Math.sin(angle) * (obs.r + 20);
+            if (obs.hp > 0) {
+                const dist = Math.hypot(nextX - obs.x, nextY - obs.y);
+                if (dist < obs.r + 20) {
+                    const angle = Math.atan2(nextY - obs.y, nextX - obs.x);
+                    nextX = obs.x + Math.cos(angle) * (obs.r + 20);
+                    nextY = obs.y + Math.sin(angle) * (obs.r + 20);
+                }
             }
         });
 
         localPlayer.x = Math.max(30, Math.min(canvas.width - 30, nextX));
         localPlayer.y = Math.max(30, Math.min(canvas.height - 30, nextY));
         localPlayer.angle = Math.atan2(mouse.y - localPlayer.y, mouse.x - localPlayer.x);
-    }
-
-    function updateLocalBullets() {
-        for (let i = localBullets.length - 1; i >= 0; i--) {
-            let b = localBullets[i];
-            b.x += b.vx;
-            b.y += b.vy;
-            b.life--;
-
-            let hitObstacle = false;
-            obstacles.forEach(obs => {
-                if (Math.hypot(obs.x - b.x, obs.y - b.y) < obs.r) hitObstacle = true;
-            });
-
-            if (hitObstacle || b.life <= 0 || b.x < 0 || b.x > canvas.width || b.y < 0 || b.y > canvas.height) {
-                localBullets.splice(i, 1);
-            }
-        }
-    }
-
-    function updateOpponents() {
-        const lerpFactor = 0.35;
-        Object.keys(serverPlayers).forEach(id => {
-            if (id !== myId && interpolatedPlayers[id]) {
-                const target = serverPlayers[id];
-                const curr = interpolatedPlayers[id];
-
-                curr.x += (target.x - curr.x) * lerpFactor;
-                curr.y += (target.y - curr.y) * lerpFactor;
-                curr.angle = target.angle;
-                curr.hp = target.hp;
-                curr.color = target.color;
-                curr.shieldTimer = target.shieldTimer;
-                curr.speedTimer = target.speedTimer;
-            }
-        });
     }
 
     function drawSpaceship(x, y, angle, color, hp, shieldActive, speedActive) {
@@ -279,9 +224,7 @@
 
         ctx.fillStyle = speedActive ? '#00f0ff' : '#ff5500';
         ctx.beginPath();
-        ctx.moveTo(-22, -6);
-        ctx.lineTo(-32 - Math.random() * 10, 0);
-        ctx.lineTo(-22, 6);
+        ctx.moveTo(-20, -5); ctx.lineTo(-30 - Math.random() * 10, 0); ctx.lineTo(-20, 5);
         ctx.fill();
 
         ctx.fillStyle = color;
@@ -289,10 +232,7 @@
         ctx.shadowBlur = 12;
 
         ctx.beginPath();
-        ctx.moveTo(25, 0);
-        ctx.lineTo(-18, -18);
-        ctx.lineTo(-10, 0);
-        ctx.lineTo(-18, 18);
+        ctx.moveTo(22, 0); ctx.lineTo(-16, -16); ctx.lineTo(-8, 0); ctx.lineTo(-16, 16);
         ctx.closePath();
         ctx.fill();
 
@@ -302,31 +242,29 @@
             ctx.strokeStyle = '#00f0ff';
             ctx.lineWidth = 3;
             ctx.beginPath();
-            ctx.arc(x, y, 32, 0, Math.PI * 2);
+            ctx.arc(x, y, 28, 0, Math.PI * 2);
             ctx.stroke();
         }
 
         if (hp > 0) {
             ctx.fillStyle = 'rgba(255,255,255,0.2)';
-            ctx.fillRect(x - 25, y - 35, 50, 6);
+            ctx.fillRect(x - 25, y - 32, 50, 5);
             ctx.fillStyle = color;
-            ctx.fillRect(x - 25, y - 35, (hp / 100) * 50, 6);
+            ctx.fillRect(x - 25, y - 32, (hp / 100) * 50, 5);
         }
     }
 
     function render() {
         ctx.save();
-
         if (screenShake > 0) {
             ctx.translate((Math.random() - 0.5) * screenShake, (Math.random() - 0.5) * screenShake);
-            screenShake *= 0.88;
+            screenShake *= 0.85;
         }
 
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
         // Grid Background
-        ctx.strokeStyle = 'rgba(30, 41, 59, 0.4)';
-        ctx.lineWidth = 1;
+        ctx.strokeStyle = 'rgba(30, 41, 59, 0.3)';
         for (let x = 0; x < canvas.width; x += 60) {
             ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
         }
@@ -334,60 +272,61 @@
             ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
         }
 
-        // Draw Obstacles
+        // Obstacles
         obstacles.forEach(obs => {
-            ctx.fillStyle = '#0f172a';
-            ctx.strokeStyle = '#00f0ff';
-            ctx.lineWidth = 3;
-            ctx.shadowColor = '#00f0ff';
-            ctx.shadowBlur = 10;
-
-            ctx.beginPath();
-            ctx.arc(obs.x, obs.y, obs.r, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.stroke();
-        });
-
-        // Draw Power-Ups
-        powerups.forEach(p => {
-            let col = p.type === 'TRIPLE' ? '#ffcc00' : (p.type === 'SPEED' ? '#00ff66' : '#00f0ff');
-            ctx.fillStyle = col;
-            ctx.beginPath();
-            ctx.arc(p.x, p.y, 16, 0, Math.PI * 2);
-            ctx.fill();
-        });
-
-        // Draw Remote Bullets
-        serverBullets.forEach(b => {
-            if (b.owner !== myId) {
-                ctx.fillStyle = b.color;
+            if (obs.hp > 0) {
+                ctx.fillStyle = '#1e293b';
+                ctx.strokeStyle = '#475569';
+                ctx.lineWidth = 4;
                 ctx.beginPath();
-                ctx.arc(b.x, b.y, 6, 0, Math.PI * 2);
+                ctx.arc(obs.x, obs.y, obs.r, 0, Math.PI * 2);
                 ctx.fill();
+                ctx.stroke();
+
+                ctx.fillStyle = 'rgba(255,255,255,0.2)';
+                ctx.fillRect(obs.x - 20, obs.y - obs.r - 12, 40, 4);
+                ctx.fillStyle = '#ff0055';
+                ctx.fillRect(obs.x - 20, obs.y - obs.r - 12, (obs.hp / obs.maxHp) * 40, 4);
             }
         });
 
-        // Draw Local Instant Bullets
-        localBullets.forEach(b => {
+        // Power-Ups
+        powerups.forEach(p => {
+            ctx.fillStyle = p.type === 'TRIPLE' ? '#ffcc00' : p.type === 'SPEED' ? '#00ff66' : '#00f0ff';
+            ctx.beginPath(); ctx.arc(p.x, p.y, 14, 0, Math.PI * 2); ctx.fill();
+        });
+
+        // Particles
+        particles.forEach((part, i) => {
+            part.x += part.vx; part.y += part.vy; part.life--;
+            ctx.fillStyle = part.color;
+            ctx.beginPath(); ctx.arc(part.x, part.y, 3, 0, Math.PI * 2); ctx.fill();
+            if (part.life <= 0) particles.splice(i, 1);
+        });
+
+        // Render Server-Synced Bullets
+        Object.values(activeBullets).forEach(b => {
             ctx.fillStyle = b.color;
             ctx.shadowColor = b.color;
             ctx.shadowBlur = 8;
-            ctx.beginPath();
-            ctx.arc(b.x, b.y, 6, 0, Math.PI * 2);
-            ctx.fill();
+            ctx.beginPath(); ctx.arc(b.x, b.y, 5, 0, Math.PI * 2); ctx.fill();
         });
 
-        // Render Opponents
+        // Opponents
         Object.keys(interpolatedPlayers).forEach(id => {
             if (id !== myId) {
                 const p = interpolatedPlayers[id];
-                if (p.hp > 0) {
-                    drawSpaceship(p.x, p.y, p.angle, p.color, p.hp, p.shieldTimer > Date.now(), p.speedTimer > Date.now());
+                const curr = interpolatedPlayers[id];
+                const target = serverPlayers[id];
+                if (target) {
+                    curr.x += (target.x - curr.x) * 0.3;
+                    curr.y += (target.y - curr.y) * 0.3;
+                    if (p.hp > 0) drawSpaceship(curr.x, curr.y, target.angle, target.color, target.hp, target.shieldTimer > Date.now(), target.speedTimer > Date.now());
                 }
             }
         });
 
-        // Render Local Player
+        // Local Player
         if (myId && serverPlayers[myId] && serverPlayers[myId].hp > 0) {
             const p = serverPlayers[myId];
             drawSpaceship(localPlayer.x, localPlayer.y, localPlayer.angle, p.color, p.hp, p.shieldTimer > Date.now(), p.speedTimer > Date.now());
@@ -410,8 +349,6 @@
 
     function loop() {
         updateLocalPlayer();
-        updateLocalBullets();
-        updateOpponents();
         render();
         requestAnimationFrame(loop);
     }
