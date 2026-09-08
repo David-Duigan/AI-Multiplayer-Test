@@ -1,180 +1,267 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Multiplayer Orbit Duel</title>
+    <title>AETHER ARENA - 4 Player Multiplayer</title>
     <style>
+        * { box-sizing: border-box; }
         body {
             margin: 0;
-            background: #0d0e15;
+            background: #090a0f;
             color: #fff;
-            font-family: sans-serif;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            height: 100vh;
+            min-height: 100vh;
             overflow: hidden;
         }
-        #ui {
-            position: absolute;
-            top: 20px;
+        #hud {
             display: flex;
-            gap: 20px;
-            z-index: 10;
+            gap: 15px;
+            margin-bottom: 10px;
+            background: rgba(255, 255, 255, 0.05);
+            padding: 10px 20px;
+            border-radius: 8px;
+            backdrop-filter: blur(5px);
         }
         input, button {
-            padding: 10px 15px;
-            font-size: 16px;
+            padding: 8px 15px;
+            font-size: 15px;
             border: none;
             border-radius: 4px;
+            outline: none;
         }
-        button {
-            background: #00f0ff;
-            color: #000;
-            font-weight: bold;
-            cursor: pointer;
-        }
+        input { background: #181b26; color: #fff; border: 1px solid #333; }
+        button { background: #00f0ff; color: #000; font-weight: bold; cursor: pointer; transition: 0.2s; }
+        button:hover { background: #66f4ff; transform: scale(1.03); }
+        #canvas-wrapper { position: relative; }
         canvas {
-            border: 2px solid #1a1c29;
-            background: #050608;
-            box-shadow: 0 0 20px rgba(0, 240, 255, 0.1);
+            border: 2px solid #222638;
+            background: #0d0f17;
+            box-shadow: 0 0 30px rgba(0, 240, 255, 0.15);
+            border-radius: 6px;
+            cursor: crosshair;
+        }
+        #scoreboard {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            background: rgba(0,0,0,0.6);
+            padding: 10px;
+            border-radius: 6px;
+            font-size: 13px;
+            pointer-events: none;
         }
     </style>
 </head>
 <body>
 
-<div id="ui">
-    <input type="text" id="roomInput" placeholder="Enter Room Code (e.g. 123)" />
-    <button onclick="joinRoom()">Join Game</button>
-    <span id="status">Enter room code to play!</span>
+<div id="hud">
+    <input type="text" id="roomInput" placeholder="Room Code (e.g. ARENA1)" />
+    <button onclick="joinRoom()">Join Arena</button>
+    <span id="status" style="align-self: center; color: #aaa;">Enter code & join!</span>
 </div>
 
-<canvas id="gameCanvas" width="800" height="600"></canvas>
+<div id="canvas-wrapper">
+    <canvas id="gameCanvas" width="1000" height="700"></canvas>
+    <div id="scoreboard">
+        <strong>LEADERBOARD</strong>
+        <div id="scores"></div>
+    </div>
+</div>
 
 <script src="/socket.io/socket.io.js"></script>
 <script>
-    const socket = io();
+    const socket = io(window.location.origin, { transports: ['websocket', 'polling'] });
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
     const statusText = document.getElementById('status');
+    const scoresDiv = document.getElementById('scores');
 
-    let myRole = null;
-    let players = {};
-    let bullets = [];
+    let myId = null;
+    let localPlayer = { x: 500, y: 350, vx: 0, vy: 0, speed: 4, dashCd: 0 };
+    let gameState = { players: {}, bullets: [], powerups: [], hazards: [] };
     let keys = {};
+    let mouse = { x: 0, y: 0 };
 
-    const localPlayer = { x: 100, y: 300, angle: 0, speed: 4, color: '#00f0ff' };
+    window.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
+    window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+    canvas.addEventListener('mousemove', e => {
+        const rect = canvas.getBoundingClientRect();
+        mouse.x = e.clientX - rect.left;
+        mouse.y = e.clientY - rect.top;
+    });
 
-    window.addEventListener('keydown', e => keys[e.key] = true);
-    window.addEventListener('keyup', e => keys[e.key] = false);
+    canvas.addEventListener('mousedown', () => {
+        if (!myId || !gameState.players[myId]) return;
+        const p = gameState.players[myId];
+        const angle = Math.atan2(mouse.y - p.y, mouse.x - p.x);
+        socket.emit('shoot', { angle });
+    });
 
     function joinRoom() {
-        const room = document.getElementById('roomInput').value.trim();
-        if (room) {
-            socket.emit('joinGame', room);
-            statusText.innerText = "Waiting for Player 2...";
+        const code = document.getElementById('roomInput').value.trim();
+        if (code) {
+            socket.emit('joinGame', code);
+            statusText.innerText = "Connecting...";
         }
     }
 
     socket.on('initPlayer', (data) => {
-        myRole = data.role;
-        localPlayer.x = myRole === 'player1' ? 100 : 700;
-        localPlayer.angle = myRole === 'player1' ? 0 : Math.PI;
-        localPlayer.color = myRole === 'player1' ? '#00f0ff' : '#ff0055';
+        myId = data.id;
+        statusText.innerText = `Joined as Player! Controls: WASD/Arrows to Move, Shift to Dash, Mouse to Aim & Shoot.`;
     });
 
-    socket.on('startGame', (serverPlayers) => {
-        statusText.innerText = "Game Connected! WASD/Arrows to Move, Space to Shoot.";
-        players = serverPlayers;
-        requestAnimationFrame(gameLoop);
-    });
-
-    socket.on('opponentMove', (oppData) => {
-        if (players[oppData.id]) {
-            players[oppData.id].x = oppData.x;
-            players[oppData.id].y = oppData.y;
-            players[oppData.id].angle = oppData.angle;
+    socket.on('tick', (state) => {
+        gameState = state;
+        if (myId && gameState.players[myId]) {
+            const serverP = gameState.players[myId];
+            if (localPlayer.x === 0 && localPlayer.y === 0) {
+                localPlayer.x = serverP.x;
+                localPlayer.y = serverP.y;
+            }
         }
+        updateLeaderboard();
     });
 
-    socket.on('opponentShoot', (b) => {
-        bullets.push(b);
-    });
-
-    socket.on('playerLeft', () => {
-        statusText.innerText = "Opponent disconnected.";
-    });
-
-    let lastShot = 0;
-    function handleInput() {
-        let moved = false;
-        if (keys['w'] || keys['ArrowUp']) { localPlayer.y -= localPlayer.speed; moved = true; }
-        if (keys['s'] || keys['ArrowDown']) { localPlayer.y += localPlayer.speed; moved = true; }
-        if (keys['a'] || keys['ArrowLeft']) { localPlayer.x -= localPlayer.speed; moved = true; }
-        if (keys['d'] || keys['ArrowRight']) { localPlayer.x += localPlayer.speed; moved = true; }
-
-        // Keep inside bounds
-        localPlayer.x = Math.max(20, Math.min(780, localPlayer.x));
-        localPlayer.y = Math.max(20, Math.min(580, localPlayer.y));
-
-        if (moved) {
-            socket.emit('playerMove', { x: localPlayer.x, y: localPlayer.y, angle: localPlayer.angle });
-        }
-
-        if (keys[' '] && Date.now() - lastShot > 250) {
-            lastShot = Date.now();
-            const bullet = { x: localPlayer.x, y: localPlayer.y, dx: 7, color: localPlayer.color, owner: socket.id };
-            bullets.push(bullet);
-            socket.emit('shootOrb', bullet);
-        }
+    function updateLeaderboard() {
+        scoresDiv.innerHTML = '';
+        Object.values(gameState.players).forEach(p => {
+            const row = document.createElement('div');
+            row.style.color = p.color;
+            row.innerHTML = `P${p.slot + 1}: ${p.kills} K / ${p.deaths} D`;
+            scoresDiv.appendChild(row);
+        });
     }
 
-    function updateBullets() {
-        for (let i = bullets.length - 1; i >= 0; i--) {
-            let b = bullets[i];
-            b.x += b.color === '#00f0ff' ? b.dx : -b.dx;
-            if (b.x < 0 || b.x > 800) bullets.splice(i, 1);
+    function updateLocalPlayer() {
+        if (!myId || !gameState.players[myId] || gameState.players[myId].hp <= 0) return;
+
+        let moveX = 0;
+        let moveY = 0;
+
+        if (keys['w'] || keys['arrowup']) moveY -= 1;
+        if (keys['s'] || keys['arrowdown']) moveY += 1;
+        if (keys['a'] || keys['arrowleft']) moveX -= 1;
+        if (keys['d'] || keys['arrowright']) moveX += 1;
+
+        // Normalization
+        if (moveX !== 0 && moveY !== 0) {
+            moveX *= 0.7071;
+            moveY *= 0.7071;
         }
+
+        let currentSpeed = localPlayer.speed;
+
+        // Dash Ability (Shift)
+        if (keys['shift'] && localPlayer.dashCd <= 0) {
+            localPlayer.dashCd = 60; // 2 sec cooldown
+            currentSpeed = 25; // Impulsive burst
+        }
+        if (localPlayer.dashCd > 0) localPlayer.dashCd--;
+
+        localPlayer.x += moveX * currentSpeed;
+        localPlayer.y += moveY * currentSpeed;
+
+        // Keep inside boundary
+        localPlayer.x = Math.max(20, Math.min(980, localPlayer.x));
+        localPlayer.y = Math.max(20, Math.min(680, localPlayer.y));
+
+        socket.emit('playerInput', { x: localPlayer.x, y: localPlayer.y });
     }
 
     function draw() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        // Draw local player
-        ctx.fillStyle = localPlayer.color;
-        ctx.beginPath();
-        ctx.arc(localPlayer.x, localPlayer.y, 15, 0, Math.PI * 2);
-        ctx.fill();
+        // Grid lines
+        ctx.strokeStyle = '#151824';
+        ctx.lineWidth = 1;
+        for (let x = 0; x < canvas.width; x += 40) {
+            ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
+        }
+        for (let y = 0; y < canvas.height; y += 40) {
+            ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
+        }
 
-        // Draw opponent
-        Object.keys(players).forEach(id => {
-            if (id !== socket.id) {
-                const p = players[id];
-                ctx.fillStyle = p.color;
-                ctx.beginPath();
-                ctx.arc(p.x, p.y, 15, 0, Math.PI * 2);
-                ctx.fill();
-            }
+        // Draw Hazards
+        gameState.hazards.forEach(h => {
+            ctx.fillStyle = '#ff0055';
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = '#ff0055';
+            ctx.beginPath();
+            let hX = h.x + Math.cos(h.angle) * 150;
+            let hY = h.y + Math.sin(h.angle) * 150;
+            ctx.arc(hX, hY, h.r, 0, Math.PI * 2);
+            ctx.fill();
         });
 
-        // Draw bullets
-        bullets.forEach(b => {
+        // Draw Powerups
+        gameState.powerups.forEach(pow => {
+            ctx.shadowBlur = 10;
+            if (pow.type === 'SHIELD') { ctx.fillStyle = '#00f0ff'; ctx.shadowColor = '#00f0ff'; }
+            if (pow.type === 'TRIPLE') { ctx.fillStyle = '#ffcc00'; ctx.shadowColor = '#ffcc00'; }
+            if (pow.type === 'HEAL') { ctx.fillStyle = '#00ff66'; ctx.shadowColor = '#00ff66'; }
+            
+            ctx.beginPath();
+            ctx.arc(pow.x, pow.y, 12, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#000';
+            ctx.font = 'bold 10px sans-serif';
+            ctx.fillText(pow.type[0], pow.x - 3, pow.y + 3);
+        });
+
+        // Draw Bullets
+        gameState.bullets.forEach(b => {
             ctx.fillStyle = b.color;
+            ctx.shadowBlur = 8;
+            ctx.shadowColor = b.color;
             ctx.beginPath();
             ctx.arc(b.x, b.y, 5, 0, Math.PI * 2);
             ctx.fill();
         });
+
+        // Draw Players
+        Object.values(gameState.players).forEach(p => {
+            if (p.hp <= 0) return;
+
+            // Render Player Body
+            ctx.shadowBlur = 12;
+            ctx.shadowColor = p.color;
+            ctx.fillStyle = p.color;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, 18, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Active Shield Aura
+            if (p.shield > Date.now()) {
+                ctx.strokeStyle = '#00f0ff';
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, 24, 0, Math.PI * 2);
+                ctx.stroke();
+            }
+
+            // Health Bar Above Head
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = '#ff3333';
+            ctx.fillRect(p.x - 20, p.y - 30, 40, 5);
+            ctx.fillStyle = '#00ff66';
+            ctx.fillRect(p.x - 20, p.y - 30, (p.hp / 100) * 40, 5);
+        });
+
+        ctx.shadowBlur = 0;
     }
 
     function gameLoop() {
-        handleInput();
-        updateBullets();
+        updateLocalPlayer();
         draw();
         requestAnimationFrame(gameLoop);
     }
+
+    requestAnimationFrame(gameLoop);
 </script>
 </body>
 </html>
