@@ -16,32 +16,53 @@
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
-    body { background: var(--bg); color: var(--text); display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 1rem; }
+    body { background: var(--bg); color: var(--text); display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 1rem; overflow-x: hidden; }
 
-    .container { background: var(--card); width: 100%; max-width: 850px; border-radius: 12px; padding: 1.5rem; position: relative; }
+    .container { background: var(--card); width: 100%; max-width: 1000px; border-radius: 12px; padding: 1.5rem; position: relative; }
     .screen { display: none; flex-direction: column; gap: 1rem; }
     .screen.active { display: flex; }
 
-    input, button { padding: 0.75rem; border-radius: 6px; border: none; font-size: 1rem; }
-    input { background: #334155; color: var(--text); border: 1px solid #475569; }
+    input, button, select { padding: 0.75rem; border-radius: 6px; border: none; font-size: 1rem; }
+    input, select { background: #334155; color: var(--text); border: 1px solid #475569; }
     button { background: var(--accent); color: white; cursor: pointer; font-weight: bold; }
     button.secondary { background: #475569; }
 
     .player-badge { background: #334155; padding: 0.5rem 1rem; border-radius: 6px; display: flex; justify-content: space-between; margin-bottom: 0.5rem; }
     
-    .canvas-wrapper { position: relative; border: 2px solid #475569; border-radius: 8px; overflow: hidden; background: #fff; width: 100%; display: flex; justify-content: center; }
+    /* Enlarged Drawing Canvas */
+    .canvas-wrapper { position: relative; border: 3px solid #475569; border-radius: 8px; overflow: hidden; background: #fff; width: 100%; display: flex; justify-content: center; transition: border-color 0.3s, box-shadow 0.3s; }
+    .canvas-wrapper.your-turn { border-color: #22c55e; box-shadow: 0 0 20px rgba(34, 197, 94, 0.4); }
     canvas { display: block; cursor: crosshair; }
 
-    .toast { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); background: var(--danger); color: white; padding: 0.4rem 1rem; border-radius: 20px; font-weight: bold; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
+    /* Flash / Particle Overlay Canvas */
+    #fx-canvas { position: absolute; inset: 0; pointer-events: none; z-index: 5; }
+
+    .toast { position: absolute; top: 15px; left: 50%; transform: translateX(-50%); background: var(--danger); color: white; padding: 0.5rem 1.2rem; border-radius: 20px; font-weight: bold; opacity: 0; transition: opacity 0.3s; pointer-events: none; z-index: 10; }
     .toast.show { opacity: 1; }
     .flash-error { animation: flash 0.4s ease; }
-    @keyframes flash { 50% { border-color: var(--danger); box-shadow: 0 0 15px var(--danger); } }
+    @keyframes flash { 50% { border-color: var(--danger); box-shadow: 0 0 20px var(--danger); } }
 
-    .vote-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 1rem; }
+    /* Palette Controls */
+    .color-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
+    .color-btn { width: 32px; height: 32px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; padding: 0; transition: transform 0.1s; }
+    .color-btn.selected { border-color: #ffffff; transform: scale(1.15); box-shadow: 0 0 8px rgba(255,255,255,0.5); }
+
+    /* Brush Size Custom Dropdown Options */
+    .size-option-dot { display: inline-block; border-radius: 50%; background: #ffffff; vertical-align: middle; margin-right: 8px; }
+
+    /* Notification Banner */
+    .notify-banner { position: fixed; top: 20px; right: -300px; background: #22c55e; color: white; padding: 0.75rem 1.5rem; border-radius: 8px; font-weight: bold; transition: right 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); z-index: 100; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+    .notify-banner.show { right: 20px; }
+
+    .vote-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 1rem; }
     .role-banner { font-size: 1.2rem; font-weight: bold; text-align: center; padding: 0.5rem; border-radius: 6px; background: #334155; }
+    
+    .countdown-widget { position: absolute; bottom: 15px; right: 15px; background: rgba(15,23,42,0.85); padding: 0.5rem 1rem; border-radius: 20px; border: 1px solid #475569; font-weight: bold; font-size: 0.9rem; }
   </style>
 </head>
 <body>
+
+<div id="notify-banner" class="notify-banner">Player finished drawing!</div>
 
 <div class="container">
 
@@ -67,21 +88,49 @@
     <div style="text-align: center; font-size: 1.1rem; color: #38bdf8;" id="turn-indicator">Waiting for turn...</div>
 
     <div class="canvas-wrapper" id="canvas-wrapper">
-      <div id="toast" class="toast">Line too short! Min length is 50px.</div>
-      <canvas id="paint-canvas" width="700" height="450"></canvas>
+      <div id="toast" class="toast">Line too short! Min length is 45px.</div>
+      <canvas id="paint-canvas" width="900" height="520"></canvas>
+      <canvas id="fx-canvas" width="900" height="520"></canvas>
     </div>
 
-    <div style="display: flex; gap: 1rem; justify-content: center; background: #334155; padding: 0.5rem; border-radius: 6px;">
-      <label>Color: <input type="color" id="stroke-color" value="#ef4444" /></label>
-      <label>Size: <input type="range" id="stroke-width" min="2" max="20" value="6" /></label>
+    <!-- Drawing Controls Bar -->
+    <div style="display: flex; gap: 1.5rem; align-items: center; justify-content: space-between; background: #334155; padding: 0.75rem 1.2rem; border-radius: 8px;">
+      
+      <!-- 12 Color Options (2 Rows of 6) -->
+      <div>
+        <span style="font-size: 0.85rem; color: var(--subtext); display: block; margin-bottom: 4px;">Color</span>
+        <div class="color-grid" id="color-grid"></div>
+      </div>
+
+      <!-- Size Dropdown with Visual Indicators -->
+      <div>
+        <label for="stroke-size-select" style="font-size: 0.85rem; color: var(--subtext); display: block; margin-bottom: 4px;">Brush Size</label>
+        <select id="stroke-size-select" style="width: 140px;">
+          <option value="3">● Small (3px)</option>
+          <option value="6" selected>●● Medium (6px)</option>
+          <option value="10">●●● Thick (10px)</option>
+          <option value="15">●●●● Heavy (15px)</option>
+          <option value="22">●●●●● Extra (22px)</option>
+          <option value="30">●●●●●● Giant (30px)</option>
+        </select>
+      </div>
+
     </div>
   </div>
 
+  <!-- INTERMISSION SCREEN -->
+  <div id="intermission-screen" class="screen" style="text-align: center; padding: 4rem 1rem; position: relative;">
+    <h1 style="font-size: 2.8rem; color: #38bdf8;">Voting Stage!</h1>
+    <p style="color: var(--subtext); font-size: 1.2rem; margin-top: 1rem;">Get ready to identify the imposter...</p>
+    <div class="countdown-widget" id="intermission-timer">Starting in: 3s</div>
+  </div>
+
   <!-- VOTING SCREEN -->
-  <div id="vote-screen" class="screen">
+  <div id="vote-screen" class="screen" style="position: relative;">
     <h2 style="text-align: center;">Voting Session</h2>
     <p style="text-align: center; color: var(--subtext);" id="vote-status">Vote for the Imposter!</p>
-    <div class="vote-grid" id="vote-grid"></div>
+    <div class="vote-grid" id="vote-grid" style="margin-top: 1rem;"></div>
+    <div class="countdown-widget" id="vote-timer" style="color: #ef4444;">Time Left: 120s</div>
   </div>
 
   <!-- GAME OVER SCREEN -->
@@ -94,30 +143,98 @@
 </div>
 
 <script>
-  // Replace window.location.origin with your Render Backend URL if hosted separately
   const socket = io(window.location.origin);
+
+  const DEFAULT_COLORS = [
+    '#ef4444', '#f97316', '#f59e0b', '#84cc16', '#10b981', '#06b6d4',
+    '#3b82f6', '#6366f1', '#a855f7', '#ec4899', '#000000', '#64748b'
+  ];
+  const MIN_LINE_LENGTH = 45;
 
   let myId = null;
   let currentTurnPlayerId = null;
   let isDrawing = false;
   let strokePoints = [];
-  const MIN_LINE_LENGTH = 50;
+  let selectedColor = DEFAULT_COLORS[0];
+  let canvasSnapshot = null; // Canvas state backup before starting stroke
+
+  // Countdown timers
+  let intermissionInterval = null;
+  let voteTimerInterval = null;
 
   // DOM Elements
   const lobbyScreen = document.getElementById('lobby-screen');
   const gameScreen = document.getElementById('game-screen');
+  const intermissionScreen = document.getElementById('intermission-screen');
   const voteScreen = document.getElementById('vote-screen');
   const gameoverScreen = document.getElementById('gameover-screen');
 
   const canvas = document.getElementById('paint-canvas');
   const ctx = canvas.getContext('2d');
+  const fxCanvas = document.getElementById('fx-canvas');
+  const fxCtx = fxCanvas.getContext('2d');
+  
   const canvasWrapper = document.getElementById('canvas-wrapper');
   const toast = document.getElementById('toast');
+  const notifyBanner = document.getElementById('notify-banner');
+
+  // --- AUDIO SYNTHESIS ---
+  const AudioContext = window.AudioContext || window.webkitAudioContext;
+  let audioCtx = null;
+
+  function initAudio() {
+    if (!audioCtx) audioCtx = new AudioContext();
+  }
+
+  function playTone(freq, type, duration) {
+    if (!audioCtx) return;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+    gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + duration);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + duration);
+  }
+
+  function playSuccessSound() {
+    initAudio();
+    playTone(523.25, 'sine', 0.15); // C5
+    setTimeout(() => playTone(659.25, 'sine', 0.25), 100); // E5
+  }
+
+  function playErrorSound() {
+    initAudio();
+    playTone(180, 'sawtooth', 0.3);
+  }
+
+  function playTurnSound() {
+    initAudio();
+    playTone(440, 'triangle', 0.2);
+  }
+
+  // --- COLOR PALETTE SETUP ---
+  const colorGrid = document.getElementById('color-grid');
+  DEFAULT_COLORS.forEach((color, index) => {
+    const btn = document.createElement('button');
+    btn.className = `color-btn ${index === 0 ? 'selected' : ''}`;
+    btn.style.backgroundColor = color;
+    btn.onclick = () => {
+      document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('selected'));
+      btn.classList.add('selected');
+      selectedColor = color;
+    };
+    colorGrid.appendChild(btn);
+  });
 
   socket.on('connect', () => { myId = socket.id; });
 
   // --- LOBBY ACTIONS ---
   document.getElementById('join-btn').onclick = () => {
+    initAudio();
     const playerName = document.getElementById('player-name').value.trim();
     const roomId = document.getElementById('room-id').value.trim();
     if (!playerName || !roomId) return;
@@ -137,18 +254,17 @@
       list.innerHTML += `<div class="player-badge"><span>${p.name}</span></div>`;
     });
 
-    // Room Host control (first joined player controls start button)
     const isHost = room.players[0] && room.players[0].id === myId;
     const startBtn = document.getElementById('start-btn');
     startBtn.style.display = isHost ? 'block' : 'none';
     startBtn.disabled = room.players.length < 3;
   });
 
-  // --- ROLE & GAME START ---
+  // --- GAMEPLAY SETUP ---
   socket.on('role_assignment', ({ role, word }) => {
     const banner = document.getElementById('role-banner');
     if (role === 'IMPOSTER') {
-      banner.innerText = "You are the IMPOSTER! Try to blend in.";
+      banner.innerText = "You are the IMPOSTER! Blend in.";
       banner.style.color = "var(--danger)";
     } else {
       banner.innerText = `Secret Word: ${word}`;
@@ -160,10 +276,8 @@
     lobbyScreen.classList.remove('active');
     gameScreen.classList.add('active');
 
-    // Clear canvas
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-
     updateTurnUI(roomState.currentTurnPlayerId);
   });
 
@@ -174,23 +288,32 @@
   function updateTurnUI(playerId, playerName) {
     currentTurnPlayerId = playerId;
     const indicator = document.getElementById('turn-indicator');
+    
     if (playerId === myId) {
-      indicator.innerText = "YOUR TURN! Draw one line.";
+      indicator.innerText = "YOUR TURN! Draw your line.";
       indicator.style.color = "#22c55e";
+      canvasWrapper.classList.add('your-turn');
+      playTurnSound();
     } else {
       indicator.innerText = `${playerName || 'Another player'}'s turn to draw...`;
       indicator.style.color = "#38bdf8";
+      canvasWrapper.classList.remove('your-turn');
     }
   }
 
-  // --- CANVAS DRAWING ---
+  // --- DRAWING LOGIC ---
   canvas.addEventListener('mousedown', (e) => {
     if (currentTurnPlayerId !== myId) return;
+    initAudio();
+    
+    // Save image snapshot before drawing begins
+    canvasSnapshot = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
     isDrawing = true;
     strokePoints = [getCoords(e)];
     ctx.beginPath();
-    ctx.strokeStyle = document.getElementById('stroke-color').value;
-    ctx.lineWidth = document.getElementById('stroke-width').value;
+    ctx.strokeStyle = selectedColor;
+    ctx.lineWidth = document.getElementById('stroke-size-select').value;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     ctx.moveTo(strokePoints[0].x, strokePoints[0].y);
@@ -216,7 +339,6 @@
     if (!isDrawing) return;
     isDrawing = false;
 
-    // Length check
     let length = 0;
     for (let i = 1; i < strokePoints.length; i++) {
       const dx = strokePoints[i].x - strokePoints[i - 1].x;
@@ -225,7 +347,12 @@
     }
 
     if (length < MIN_LINE_LENGTH) {
-      // Invalid stroke: reset canvas visually and alert
+      // Revert canvas state to snapshot (deletes invalid short line)
+      if (canvasSnapshot) {
+        ctx.putImageData(canvasSnapshot, 0, 0);
+      }
+
+      playErrorSound();
       canvasWrapper.classList.add('flash-error');
       toast.classList.add('show');
       setTimeout(() => {
@@ -233,16 +360,16 @@
         toast.classList.remove('show');
       }, 1200);
     } else {
-      // Emit valid stroke to server
+      playSuccessSound();
       socket.emit('submit_stroke', {
         points: strokePoints,
-        color: document.getElementById('stroke-color').value,
-        width: document.getElementById('stroke-width').value
+        color: selectedColor,
+        width: document.getElementById('stroke-size-select').value
       });
     }
   }
 
-  // Sync Stroke from other players
+  // Broadcasted Stroke Receive
   socket.on('draw_stroke', (data) => {
     ctx.beginPath();
     ctx.strokeStyle = data.color;
@@ -255,11 +382,80 @@
       ctx.lineTo(data.points[i].x, data.points[i].y);
     }
     ctx.stroke();
+
+    // Spawn Particles & Notification if drawn by another player
+    if (data.painterId !== myId) {
+      showNotification(`${data.painterName} finished drawing!`);
+      const lastPt = data.points[data.points.length - 1];
+      spawnParticleBurst(lastPt.x, lastPt.y, data.color);
+    }
   });
 
-  // --- VOTING PHASE ---
-  socket.on('start_voting', ({ alivePlayers }) => {
+  function showNotification(msg) {
+    notifyBanner.innerText = msg;
+    notifyBanner.classList.add('show');
+    setTimeout(() => notifyBanner.classList.remove('show'), 2500);
+  }
+
+  // Particles FX
+  function spawnParticleBurst(x, y, color) {
+    const particles = [];
+    for (let i = 0; i < 20; i++) {
+      particles.push({
+        x, y,
+        vx: (Math.random() - 0.5) * 8,
+        vy: (Math.random() - 0.5) * 8,
+        radius: Math.random() * 4 + 2,
+        alpha: 1,
+        color
+      });
+    }
+
+    function renderFX() {
+      fxCtx.clearRect(0, 0, fxCanvas.width, fxCanvas.height);
+      let alive = false;
+
+      particles.forEach(p => {
+        if (p.alpha > 0) {
+          alive = true;
+          p.x += p.vx;
+          p.y += p.vy;
+          p.alpha -= 0.03;
+
+          fxCtx.beginPath();
+          fxCtx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+          fxCtx.fillStyle = p.color;
+          fxCtx.globalAlpha = Math.max(0, p.alpha);
+          fxCtx.fill();
+        }
+      });
+
+      if (alive) requestAnimationFrame(renderFX);
+      else fxCtx.clearRect(0, 0, fxCanvas.width, fxCanvas.height);
+    }
+
+    renderFX();
+  }
+
+  // --- INTERMISSION & VOTING PHASES ---
+  socket.on('start_intermission', () => {
     gameScreen.classList.remove('active');
+    intermissionScreen.classList.add('active');
+
+    let count = 3;
+    const timerElem = document.getElementById('intermission-timer');
+    timerElem.innerText = `Starting in: ${count}s`;
+
+    clearInterval(intermissionInterval);
+    intermissionInterval = setInterval(() => {
+      count--;
+      if (count >= 0) timerElem.innerText = `Starting in: ${count}s`;
+      if (count <= 0) clearInterval(intermissionInterval);
+    }, 1000);
+  });
+
+  socket.on('start_voting', ({ alivePlayers }) => {
+    intermissionScreen.classList.remove('active');
     voteScreen.classList.add('active');
 
     const grid = document.getElementById('vote-grid');
@@ -279,11 +475,23 @@
     skipBtn.innerText = 'Skip Vote';
     skipBtn.onclick = () => castVote('SKIP');
     grid.appendChild(skipBtn);
+
+    // 120s Timer Display
+    let timeLeft = 120;
+    const timerElem = document.getElementById('vote-timer');
+    timerElem.innerText = `Time Left: ${timeLeft}s`;
+
+    clearInterval(voteTimerInterval);
+    voteTimerInterval = setInterval(() => {
+      timeLeft--;
+      if (timeLeft >= 0) timerElem.innerText = `Time Left: ${timeLeft}s`;
+      if (timeLeft <= 0) clearInterval(voteTimerInterval);
+    }, 1000);
   });
 
   function castVote(targetId) {
     socket.emit('submit_vote', { targetId });
-    document.getElementById('vote-grid').innerHTML = '<p style="text-align:center;">Vote submitted. Waiting for other players...</p>';
+    document.getElementById('vote-grid').innerHTML = '<p style="text-align:center;">Vote submitted. Waiting for results...</p>';
   }
 
   socket.on('vote_progress', ({ votedCount, totalCount }) => {
@@ -291,6 +499,7 @@
   });
 
   socket.on('vote_result', ({ message }) => {
+    clearInterval(voteTimerInterval);
     alert(message);
   });
 
@@ -301,6 +510,7 @@
   });
 
   socket.on('game_over', ({ winner, message }) => {
+    clearInterval(voteTimerInterval);
     voteScreen.classList.remove('active');
     gameScreen.classList.remove('active');
     gameoverScreen.classList.add('active');

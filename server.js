@@ -4,15 +4,11 @@ const { Server } = require('socket.io');
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, {
-  cors: { origin: "*" }
-});
+const io = new Server(server, { cors: { origin: "*" } });
 
 app.use(express.static('public'));
 
 const WORDS = ['Banana', 'Airplane', 'Guitar', 'Elephant', 'Pizza', 'House', 'Bicycle', 'Cat', 'Spider', 'Carrot', 'Crown', 'Sun', 'Tree', 'Smartphone', 'Glasses'];
-
-// Room State Management
 const rooms = {};
 
 io.on('connection', (socket) => {
@@ -25,19 +21,18 @@ io.on('connection', (socket) => {
     if (!rooms[roomId]) {
       rooms[roomId] = {
         id: roomId,
-        players: [], // { id, name, isAlive }
-        state: 'LOBBY', // LOBBY, DRAWING, VOTING, GAMEOVER
+        players: [],
+        state: 'LOBBY',
         secretWord: '',
         imposterId: null,
         currentTurnIndex: 0,
-        votes: {}, // voterId -> targetPlayerId / 'SKIP'
-        votedPlayers: new Set()
+        votes: {},
+        votedPlayers: new Set(),
+        voteTimer: null
       };
     }
 
     const room = rooms[roomId];
-    
-    // Prevent duplicate joins or mid-game join as active player
     if (room.state === 'LOBBY' && room.players.length < 8) {
       room.players.push({ id: socket.id, name: playerName, isAlive: true });
     }
@@ -51,13 +46,10 @@ io.on('connection', (socket) => {
 
     room.state = 'DRAWING';
     room.secretWord = WORDS[Math.floor(Math.random() * WORDS.length)];
-    
-    // Assign Imposter
     const imposterIndex = Math.floor(Math.random() * room.players.length);
     room.imposterId = room.players[imposterIndex].id;
     room.currentTurnIndex = 0;
 
-    // Send private roles to individual sockets
     room.players.forEach(p => {
       const isImposter = (p.id === room.imposterId);
       io.to(p.id).emit('role_assignment', {
@@ -76,15 +68,18 @@ io.on('connection', (socket) => {
     const activePlayers = room.players.filter(p => p.isAlive);
     const currentPlayer = activePlayers[room.currentTurnIndex];
 
-    if (socket.id !== currentPlayer.id) return; // Not their turn
+    if (socket.id !== currentPlayer.id) return;
 
-    // Broadcast stroke to all players in the room
-    io.to(currentRoom).emit('draw_stroke', strokeData);
+    // Broadcast stroke to all players
+    io.to(currentRoom).emit('draw_stroke', {
+      ...strokeData,
+      painterName: currentPlayer.name,
+      painterId: socket.id
+    });
 
-    // Advance turn
     room.currentTurnIndex++;
     if (room.currentTurnIndex >= activePlayers.length) {
-      startVotingPhase(room);
+      initiateVotingIntermission(room);
     } else {
       io.to(currentRoom).emit('turn_changed', {
         currentTurnPlayerId: activePlayers[room.currentTurnIndex].id,
@@ -96,31 +91,15 @@ io.on('connection', (socket) => {
   socket.on('submit_vote', ({ targetId }) => {
     const room = rooms[currentRoom];
     if (!room || room.state !== 'VOTING') return;
-    if (room.votedPlayers.has(socket.id)) return;
-
-    room.votedPlayers.add(socket.id);
-    room.votes[targetId] = (room.votes[targetId] || 0) + 1;
-
-    const alivePlayers = room.players.filter(p => p.isAlive);
-    
-    // Broadcast progress
-    io.to(currentRoom).emit('vote_progress', {
-      votedCount: room.votedPlayers.size,
-      totalCount: alivePlayers.length
-    });
-
-    // Check if everyone has voted
-    if (room.votedPlayers.size >= alivePlayers.length) {
-      processVotes(room);
-    }
+    recordUserVote(room, socket.id, targetId);
   });
 
   socket.on('disconnect', () => {
     if (!currentRoom || !rooms[currentRoom]) return;
     const room = rooms[currentRoom];
-    
     room.players = room.players.filter(p => p.id !== socket.id);
     if (room.players.length === 0) {
+      if (room.voteTimer) clearTimeout(room.voteTimer);
       delete rooms[currentRoom];
     } else {
       io.to(currentRoom).emit('room_updated', getPublicRoomState(room));
@@ -128,14 +107,54 @@ io.on('connection', (socket) => {
   });
 });
 
+function initiateVotingIntermission(room) {
+  room.state = 'INTERMISSION';
+  io.to(room.id).emit('start_intermission');
+
+  // Wait 3 seconds before moving to voting phase
+  setTimeout(() => {
+    if (rooms[room.id]) startVotingPhase(room);
+  }, 3000);
+}
+
 function startVotingPhase(room) {
   room.state = 'VOTING';
   room.votes = {};
   room.votedPlayers = new Set();
 
-  io.to(room.id).emit('start_voting', {
-    alivePlayers: room.players.filter(p => p.isAlive)
+  const alivePlayers = room.players.filter(p => p.isAlive);
+  io.to(room.id).emit('start_voting', { alivePlayers });
+
+  // 120-second voting timer
+  if (room.voteTimer) clearTimeout(room.voteTimer);
+  room.voteTimer = setTimeout(() => {
+    if (!rooms[room.id] || room.state !== 'VOTING') return;
+    // Auto-skip for players who did not vote
+    alivePlayers.forEach(p => {
+      if (!room.votedPlayers.has(p.id)) {
+        recordUserVote(room, p.id, 'SKIP');
+      }
+    });
+  }, 120000);
+}
+
+function recordUserVote(room, voterId, targetId) {
+  if (room.votedPlayers.has(voterId)) return;
+
+  room.votedPlayers.add(voterId);
+  room.votes[targetId] = (room.votes[targetId] || 0) + 1;
+
+  const alivePlayers = room.players.filter(p => p.isAlive);
+  
+  io.to(room.id).emit('vote_progress', {
+    votedCount: room.votedPlayers.size,
+    totalCount: alivePlayers.length
   });
+
+  if (room.votedPlayers.size >= alivePlayers.length) {
+    if (room.voteTimer) clearTimeout(room.voteTimer);
+    processVotes(room);
+  }
 }
 
 function processVotes(room) {
@@ -166,17 +185,14 @@ function processVotes(room) {
     eliminated.isAlive = false;
 
     if (votedOutId === room.imposterId) {
-      // Imposter Eliminated -> Artists Win
       room.state = 'GAMEOVER';
       io.to(room.id).emit('game_over', {
         winner: 'ARTISTS',
         message: `The Imposter (${imposterPlayer.name}) was caught! Artists win!`
       });
     } else {
-      // Innocent Eliminated
       const alivePlayers = room.players.filter(p => p.isAlive);
       if (alivePlayers.length <= 2) {
-        // Imposter Wins
         room.state = 'GAMEOVER';
         io.to(room.id).emit('game_over', {
           winner: 'IMPOSTER',
