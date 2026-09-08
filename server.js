@@ -75,14 +75,13 @@ io.on('connection', (socket) => {
         }
     });
 
-    // Authoritative Input Processing for Client Prediction & Reconciliation
     socket.on('playerInput', (input) => {
         if (!currentRoom || !rooms[currentRoom]) return;
         const room = rooms[currentRoom];
         const p = room.players[socket.id];
         if (!p || p.hp <= 0) return;
 
-        let speed = p.speedTimer > Date.now() ? 9 : 5.5;
+        let speed = p.speedTimer > Date.now() ? 9.5 : 6;
         let nextX = p.x;
         let nextY = p.y;
 
@@ -91,7 +90,6 @@ io.on('connection', (socket) => {
         if (input.left) nextX -= speed;
         if (input.right) nextX += speed;
 
-        // Obstacle Collisions
         room.obstacles.forEach(obs => {
             if (obs.hp > 0) {
                 const dist = Math.hypot(nextX - obs.x, nextY - obs.y);
@@ -109,7 +107,6 @@ io.on('connection', (socket) => {
         p.lastProcessedSeq = input.seq;
     });
 
-    // Client-predicted Bullet Registration
     socket.on('spawnBullet', (bulletData) => {
         if (!currentRoom || !rooms[currentRoom]) return;
         const room = rooms[currentRoom];
@@ -139,37 +136,35 @@ io.on('connection', (socket) => {
     });
 });
 
-// Server Loop (40 Ticks/Sec)
 setInterval(() => {
     Object.keys(rooms).forEach(code => {
         const room = rooms[code];
 
-        // Powerups
-        if (Date.now() - room.lastPowerupSpawn > 8000 && room.powerups.length < 3) {
+        if (Date.now() - room.lastPowerupSpawn > 7000 && room.powerups.length < 4) {
             room.lastPowerupSpawn = Date.now();
             const types = ['SHIELD', 'TRIPLE', 'SPEED'];
             room.powerups.push({
-                id: Math.random(),
+                id: Math.random().toString(36).substr(2, 9),
                 x: 300 + Math.random() * 1200,
                 y: 200 + Math.random() * 600,
                 type: types[Math.floor(Math.random() * types.length)]
             });
         }
 
-        // Powerup Pickups
         for (let i = room.powerups.length - 1; i >= 0; i--) {
             const pow = room.powerups[i];
             Object.values(room.players).forEach(p => {
-                if (p.hp > 0 && Math.hypot(p.x - pow.x, p.y - pow.y) < 35) {
+                if (p.hp > 0 && Math.hypot(p.x - pow.x, p.y - pow.y) < 38) {
                     if (pow.type === 'SHIELD') p.shieldTimer = Date.now() + 6000;
                     if (pow.type === 'TRIPLE') p.tripleTimer = Date.now() + 6000;
                     if (pow.type === 'SPEED') p.speedTimer = Date.now() + 6000;
+
+                    io.to(code).emit('powerupCollected', { type: pow.type, playerId: p.id });
                     room.powerups.splice(i, 1);
                 }
             });
         }
 
-        // Server Authoritative Bullet Updates & Collisions
         const bulletIds = Object.keys(room.bullets);
         bulletIds.forEach(id => {
             const b = room.bullets[id];
@@ -179,12 +174,11 @@ setInterval(() => {
 
             let hit = false;
 
-            // Obstacle Collisions
             room.obstacles.forEach(obs => {
                 if (!hit && obs.hp > 0 && Math.hypot(obs.x - b.x, obs.y - b.y) < obs.r) {
                     hit = true;
                     obs.hp -= 10;
-                    io.to(code).emit('impactEvent', { id: b.id, x: b.x, y: b.y, color: '#aaa' });
+                    io.to(code).emit('impactEvent', { id: b.id, x: b.x, y: b.y, color: '#00f0ff' });
 
                     if (obs.hp <= 0) {
                         setTimeout(() => { obs.hp = obs.maxHp; }, 10000);
@@ -192,20 +186,21 @@ setInterval(() => {
                 }
             });
 
-            // Player Collisions
             Object.values(room.players).forEach(p => {
                 if (!hit && p.hp > 0 && p.id !== b.owner) {
-                    if (Math.hypot(p.x - b.x, p.y - b.y) < 26) {
+                    if (Math.hypot(p.x - b.x, p.y - b.y) < 28) {
                         hit = true;
                         let dmg = (p.shieldTimer > Date.now()) ? 5 : 25;
                         p.hp -= dmg;
 
-                        io.to(code).emit('impactEvent', { id: b.id, x: b.x, y: b.y, color: b.color });
+                        io.to(code).emit('impactEvent', { id: b.id, x: b.x, y: b.y, color: b.color, victimId: p.id });
 
                         if (p.hp <= 0) {
                             p.hp = 0;
                             p.deaths++;
                             if (room.players[b.owner]) room.players[b.owner].kills++;
+
+                            io.to(code).emit('playerDestroyed', { victimId: p.id, killerId: b.owner, x: p.x, y: p.y, color: p.color });
 
                             const targetId = p.id;
                             const slot = p.slot;
@@ -228,7 +223,6 @@ setInterval(() => {
             }
         });
 
-        // Broadcast State Snapshot with Timestamp
         io.to(code).emit('serverState', {
             timestamp: Date.now(),
             players: room.players,
@@ -240,4 +234,4 @@ setInterval(() => {
 }, 1000 / 40);
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`Aether Arena Netcode Server running on port ${PORT}`));
+server.listen(PORT, () => console.log(`Aether Arena Vibe Server running on port ${PORT}`));

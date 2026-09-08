@@ -3,42 +3,49 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AETHER ARENA: HIGH-PERFORMANCE NETCODE</title>
+    <title>AETHER ARENA: NEON OVERDRIVE</title>
     <style>
         * { box-sizing: border-box; user-select: none; }
         html, body {
             margin: 0; padding: 0; width: 100vw; height: 100vh;
-            background: #050608; color: #fff;
-            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: #020305; color: #fff;
+            font-family: 'Orbitron', 'Segoe UI', system-ui, sans-serif;
             overflow: hidden; display: flex; align-items: center; justify-content: center;
         }
         #ui-overlay {
             position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
             display: flex; gap: 15px; z-index: 100;
-            background: rgba(12, 16, 26, 0.85); padding: 12px 24px; border-radius: 12px;
-            border: 1px solid rgba(0, 240, 255, 0.3); backdrop-filter: blur(10px);
+            background: rgba(8, 12, 22, 0.85); padding: 12px 24px; border-radius: 12px;
+            border: 1px solid rgba(0, 240, 255, 0.4); backdrop-filter: blur(12px);
+            box-shadow: 0 0 25px rgba(0, 240, 255, 0.2);
         }
         input {
-            background: #0a0d14; color: #00f0ff; border: 1px solid #1e293b;
+            background: #060911; color: #00f0ff; border: 1px solid #1e293b;
             padding: 10px 16px; border-radius: 6px; font-size: 16px; outline: none;
-            text-transform: uppercase; font-weight: bold;
+            text-transform: uppercase; font-weight: bold; letter-spacing: 1px;
+            box-shadow: inset 0 0 10px rgba(0,0,0,0.8);
         }
         button {
-            background: linear-gradient(135deg, #00f0ff, #0088ff); color: #000;
-            font-weight: 800; border: none; padding: 10px 20px; border-radius: 6px;
-            cursor: pointer; transition: all 0.2s ease;
+            background: linear-gradient(135deg, #00f0ff, #ff0055); color: #fff;
+            font-weight: 900; border: none; padding: 10px 24px; border-radius: 6px;
+            cursor: pointer; transition: all 0.2s ease; text-shadow: 0 0 8px #000;
+            box-shadow: 0 0 15px rgba(255, 0, 85, 0.4);
         }
+        button:hover { transform: scale(1.05); filter: brightness(1.2); }
         #scoreboard {
             position: absolute; top: 20px; right: 20px; z-index: 90;
-            background: rgba(10, 14, 23, 0.8); border: 1px solid rgba(255, 255, 255, 0.1);
-            padding: 15px 20px; border-radius: 10px; min-width: 180px;
+            background: rgba(8, 12, 22, 0.85); border: 1px solid rgba(255, 255, 255, 0.15);
+            padding: 15px 20px; border-radius: 10px; min-width: 200px;
+            backdrop-filter: blur(10px); box-shadow: 0 0 20px rgba(0,0,0,0.6);
         }
-        .score-row { display: flex; justify-content: space-between; font-weight: bold; margin-top: 6px; }
+        .score-row { display: flex; justify-content: space-between; font-weight: bold; margin-top: 6px; letter-spacing: 0.5px; }
         #crosshair {
-            position: absolute; width: 22px; height: 22px; border: 2px solid #00f0ff;
+            position: absolute; width: 28px; height: 28px; border: 2px solid #00f0ff;
             border-radius: 50%; pointer-events: none; transform: translate(-50%, -50%);
-            z-index: 200; box-shadow: 0 0 12px #00f0ff;
+            z-index: 200; box-shadow: 0 0 15px #00f0ff, inset 0 0 10px #00f0ff;
+            display: flex; align-items: center; justify-content: center;
         }
+        #crosshair::after { content: ''; width: 4px; height: 4px; background: #ff0055; border-radius: 50%; }
         canvas { display: block; width: 100vw; height: 100vh; cursor: none; }
     </style>
 </head>
@@ -46,12 +53,12 @@
 
 <div id="crosshair"></div>
 <div id="ui-overlay">
-    <input type="text" id="roomInput" placeholder="ROOM CODE" value="ARENA1" />
-    <button onclick="joinRoom()">JOIN MATCH</button>
+    <input type="text" id="roomInput" placeholder="ROOM CODE" value="NEON1" />
+    <button onclick="joinRoom()">LAUNCH ARENA</button>
 </div>
 
 <div id="scoreboard">
-    <div style="font-weight: 800; border-bottom: 1px solid #333; padding-bottom: 5px; color: #888;">ARENA MATCH</div>
+    <div style="font-weight: 800; border-bottom: 1px solid #333; padding-bottom: 5px; color: #00f0ff; letter-spacing: 1px;">PILOT LEADERBOARD</div>
     <div id="scores"></div>
 </div>
 
@@ -59,6 +66,76 @@
 
 <script src="/socket.io/socket.io.js"></script>
 <script>
+    // --- Web Audio Synthesizer (No external sound files required) ---
+    class SoundEngine {
+        constructor() {
+            this.ctx = null;
+        }
+        init() {
+            if (!this.ctx) {
+                this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+        }
+        playLaser() {
+            if (!this.ctx) return;
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(880, this.ctx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(110, this.ctx.currentTime + 0.12);
+            gain.gain.setValueAtTime(0.2, this.ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.12);
+            osc.connect(gain); gain.connect(this.ctx.destination);
+            osc.start(); osc.stop(this.ctx.currentTime + 0.12);
+        }
+        playHit() {
+            if (!this.ctx) return;
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.type = 'square';
+            osc.frequency.setValueAtTime(220, this.ctx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(40, this.ctx.currentTime + 0.08);
+            gain.gain.setValueAtTime(0.25, this.ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.08);
+            osc.connect(gain); gain.connect(this.ctx.destination);
+            osc.start(); osc.stop(this.ctx.currentTime + 0.08);
+        }
+        playExplosion() {
+            if (!this.ctx) return;
+            const bufferSize = this.ctx.sampleRate * 0.4;
+            const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+            const data = buffer.getChannelData(0);
+            for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+
+            const noise = this.ctx.createBufferSource();
+            noise.buffer = buffer;
+            const filter = this.ctx.createBiquadFilter();
+            filter.type = 'lowpass';
+            filter.frequency.setValueAtTime(800, this.ctx.currentTime);
+            filter.frequency.linearRampToValueAtTime(50, this.ctx.currentTime + 0.4);
+
+            const gain = this.ctx.createGain();
+            gain.gain.setValueAtTime(0.4, this.ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.4);
+
+            noise.connect(filter); filter.connect(gain); gain.connect(this.ctx.destination);
+            noise.start();
+        }
+        playPowerup() {
+            if (!this.ctx) return;
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(300, this.ctx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(1200, this.ctx.currentTime + 0.25);
+            gain.gain.setValueAtTime(0.25, this.ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.25);
+            osc.connect(gain); gain.connect(this.ctx.destination);
+            osc.start(); osc.stop(this.ctx.currentTime + 0.25);
+        }
+    }
+
+    const audio = new SoundEngine();
     const socket = io(window.location.origin, { transports: ['websocket', 'polling'] });
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
@@ -69,11 +146,10 @@
     let inputSequence = 0;
     let pendingInputs = [];
 
-    // Entity Interpolation Snapshots Buffer
     let stateBuffer = [];
     const INTERPOLATION_OFFSET_MS = 50;
 
-    let localBullets = {}; // Local independent simulation for bullets
+    let localBullets = {};
     let powerups = [];
     let obstacles = [];
     let particles = [];
@@ -88,7 +164,10 @@
     window.addEventListener('resize', resizeCanvas);
     resizeCanvas();
 
-    window.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
+    window.addEventListener('keydown', e => {
+        audio.init();
+        keys[e.key.toLowerCase()] = true;
+    });
     window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
     window.addEventListener('mousemove', e => {
         mouse.x = e.clientX;
@@ -97,13 +176,13 @@
         crosshair.style.top = `${e.clientY}px`;
     });
 
-    // Fire Bullets with Instant Client-Side Physics Simulation
     window.addEventListener('mousedown', () => {
+        audio.init();
         const latestState = getLatestServerPlayerState(myId);
         if (!myId || !latestState || latestState.hp <= 0) return;
 
         const angle = Math.atan2(mouse.y - localPlayer.y, mouse.x - localPlayer.x);
-        const speed = 22;
+        const speed = 24;
         const isTriple = latestState.tripleTimer > Date.now();
 
         const angles = isTriple ? [angle - 0.2, angle, angle + 0.2] : [angle];
@@ -113,25 +192,24 @@
             const bulletData = {
                 id: bulletId,
                 owner: myId,
-                x: localPlayer.x + Math.cos(a) * 30,
-                y: localPlayer.y + Math.sin(a) * 30,
+                x: localPlayer.x + Math.cos(a) * 32,
+                y: localPlayer.y + Math.sin(a) * 32,
                 vx: Math.cos(a) * speed,
                 vy: Math.sin(a) * speed,
                 color: latestState.color,
                 life: 80
             };
 
-            // Local simulation store
             localBullets[bulletId] = bulletData;
-
-            // Notify server to initiate authoritative trajectory & hit detection
             socket.emit('spawnBullet', bulletData);
         });
 
-        screenShake = 3;
+        audio.playLaser();
+        screenShake = 4;
     });
 
     function joinRoom() {
+        audio.init();
         const room = document.getElementById('roomInput').value.trim().toUpperCase();
         if (room) socket.emit('joinGame', room);
     }
@@ -150,19 +228,35 @@
         }
     });
 
-    socket.on('impactEvent', (data) => {
-        delete localBullets[data.id]; // Remove visual bullet immediately on impact
-        screenShake = 6;
-        for (let i = 0; i < 10; i++) {
+    socket.on('powerupCollected', () => {
+        audio.playPowerup();
+    });
+
+    socket.on('playerDestroyed', (data) => {
+        audio.playExplosion();
+        screenShake = 18;
+        for (let i = 0; i < 35; i++) {
             particles.push({
                 x: data.x, y: data.y,
-                vx: (Math.random() - 0.5) * 6, vy: (Math.random() - 0.5) * 6,
-                life: 15, color: data.color
+                vx: (Math.random() - 0.5) * 12, vy: (Math.random() - 0.5) * 12,
+                life: 30, color: data.color, size: 4 + Math.random() * 4
             });
         }
     });
 
-    // Receive Server Snapshot for Interpolation and Reconciliation
+    socket.on('impactEvent', (data) => {
+        delete localBullets[data.id];
+        audio.playHit();
+        screenShake = 7;
+        for (let i = 0; i < 12; i++) {
+            particles.push({
+                x: data.x, y: data.y,
+                vx: (Math.random() - 0.5) * 8, vy: (Math.random() - 0.5) * 8,
+                life: 18, color: data.color, size: 2 + Math.random() * 3
+            });
+        }
+    });
+
     socket.on('serverState', (data) => {
         stateBuffer.push(data);
         if (stateBuffer.length > 20) stateBuffer.shift();
@@ -172,15 +266,12 @@
 
         const serverMe = data.players[myId];
         if (serverMe) {
-            // Client Reconciliation: Re-apply pending local inputs on top of last confirmed server state
             localPlayer.x = serverMe.x;
             localPlayer.y = serverMe.y;
-
             pendingInputs = pendingInputs.filter(input => input.seq > serverMe.lastProcessedSeq);
             pendingInputs.forEach(input => applyInputToLocalPlayer(input));
         }
 
-        // Synchronize remote bullets fired by opponents into local simulation
         Object.keys(data.bullets).forEach(id => {
             const b = data.bullets[id];
             if (b.owner !== myId) {
@@ -193,7 +284,7 @@
 
     function applyInputToLocalPlayer(input) {
         const latestState = getLatestServerPlayerState(myId);
-        let speed = (latestState && latestState.speedTimer > Date.now()) ? 9 : 5.5;
+        let speed = (latestState && latestState.speedTimer > Date.now()) ? 9.5 : 6;
 
         let nextX = localPlayer.x;
         let nextY = localPlayer.y;
@@ -224,6 +315,8 @@
         if (!myId || !latestState || latestState.hp <= 0) return;
 
         inputSequence++;
+        const isMoving = keys['w'] || keys['s'] || keys['a'] || keys['d'] || keys['arrowup'] || keys['arrowdown'] || keys['arrowleft'] || keys['arrowright'];
+
         const input = {
             seq: inputSequence,
             up: keys['w'] || keys['arrowup'],
@@ -233,17 +326,21 @@
             angle: Math.atan2(mouse.y - localPlayer.y, mouse.x - localPlayer.x)
         };
 
-        // 1. Predict Movement Locally
         applyInputToLocalPlayer(input);
-
-        // 2. Queue for Server Reconciliation
         pendingInputs.push(input);
-
-        // 3. Send Input to Server
         socket.emit('playerInput', input);
+
+        if (isMoving && Math.random() < 0.6) {
+            particles.push({
+                x: localPlayer.x - Math.cos(localPlayer.angle) * 20,
+                y: localPlayer.y - Math.sin(localPlayer.angle) * 20,
+                vx: -Math.cos(localPlayer.angle) * 3 + (Math.random() - 0.5) * 2,
+                vy: -Math.sin(localPlayer.angle) * 3 + (Math.random() - 0.5) * 2,
+                life: 14, color: '#00f0ff', size: 3
+            });
+        }
     }
 
-    // Helper: Return interpolated positions for opponents from server snapshots
     function getInterpolatedOpponent(id, renderTime) {
         if (stateBuffer.length < 2) return null;
 
@@ -279,16 +376,18 @@
         ctx.rotate(angle);
 
         ctx.fillStyle = speedActive ? '#00f0ff' : '#ff5500';
+        ctx.shadowColor = speedActive ? '#00f0ff' : '#ff5500';
+        ctx.shadowBlur = 15;
         ctx.beginPath();
-        ctx.moveTo(-20, -5); ctx.lineTo(-30 - Math.random() * 10, 0); ctx.lineTo(-20, 5);
+        ctx.moveTo(-20, -6); ctx.lineTo(-32 - Math.random() * 12, 0); ctx.lineTo(-20, 6);
         ctx.fill();
 
         ctx.fillStyle = color;
         ctx.shadowColor = color;
-        ctx.shadowBlur = 12;
+        ctx.shadowBlur = 18;
 
         ctx.beginPath();
-        ctx.moveTo(22, 0); ctx.lineTo(-16, -16); ctx.lineTo(-8, 0); ctx.lineTo(-16, 16);
+        ctx.moveTo(24, 0); ctx.lineTo(-18, -18); ctx.lineTo(-10, 0); ctx.lineTo(-18, 18);
         ctx.closePath();
         ctx.fill();
 
@@ -296,41 +395,85 @@
 
         if (shieldActive) {
             ctx.strokeStyle = '#00f0ff';
+            ctx.shadowColor = '#00f0ff';
+            ctx.shadowBlur = 20;
             ctx.lineWidth = 3;
             ctx.beginPath();
-            ctx.arc(x, y, 28, 0, Math.PI * 2);
+            ctx.arc(x, y, 32, 0, Math.PI * 2);
             ctx.stroke();
         }
 
         if (hp > 0) {
-            ctx.fillStyle = 'rgba(255,255,255,0.2)';
-            ctx.fillRect(x - 25, y - 32, 50, 5);
+            ctx.fillStyle = 'rgba(0,0,0,0.6)';
+            ctx.fillRect(x - 26, y - 36, 52, 6);
             ctx.fillStyle = color;
-            ctx.fillRect(x - 25, y - 32, (hp / 100) * 50, 5);
+            ctx.shadowColor = color;
+            ctx.shadowBlur = 8;
+            ctx.fillRect(x - 25, y - 35, (hp / 100) * 50, 4);
         }
     }
 
     function updateLocalBullets() {
+        const renderTime = Date.now() - INTERPOLATION_OFFSET_MS;
+
         Object.keys(localBullets).forEach(id => {
             const b = localBullets[id];
             b.x += b.vx;
             b.y += b.vy;
             b.life--;
+
+            // Instant Local Client Hit Detection Prediction
+            if (b.owner === myId) {
+                // Obstacles
+                obstacles.forEach(obs => {
+                    if (obs.hp > 0 && Math.hypot(obs.x - b.x, obs.y - b.y) < obs.r) {
+                        triggerLocalImpact(b, '#00f0ff');
+                    }
+                });
+
+                // Opponents
+                const latestSnapshot = stateBuffer.length > 0 ? stateBuffer[stateBuffer.length - 1] : null;
+                if (latestSnapshot) {
+                    Object.keys(latestSnapshot.players).forEach(pId => {
+                        if (pId !== myId) {
+                            const opp = getInterpolatedOpponent(pId, renderTime);
+                            if (opp && opp.hp > 0 && Math.hypot(opp.x - b.x, opp.y - b.y) < 28) {
+                                triggerLocalImpact(b, opp.color);
+                            }
+                        }
+                    });
+                }
+            }
+
             if (b.life <= 0) delete localBullets[id];
         });
+    }
+
+    function triggerLocalImpact(bullet, color) {
+        audio.playHit();
+        screenShake = 6;
+        for (let i = 0; i < 10; i++) {
+            particles.push({
+                x: bullet.x, y: bullet.y,
+                vx: (Math.random() - 0.5) * 8, vy: (Math.random() - 0.5) * 8,
+                life: 15, color: color, size: 3
+            });
+        }
+        delete localBullets[bullet.id];
     }
 
     function render() {
         ctx.save();
         if (screenShake > 0) {
             ctx.translate((Math.random() - 0.5) * screenShake, (Math.random() - 0.5) * screenShake);
-            screenShake *= 0.85;
+            screenShake *= 0.88;
         }
 
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        // Grid Background
-        ctx.strokeStyle = 'rgba(30, 41, 59, 0.3)';
+        // Grid Background with Pulsing Bloom
+        ctx.strokeStyle = 'rgba(0, 240, 255, 0.08)';
+        ctx.lineWidth = 1;
         for (let x = 0; x < canvas.width; x += 60) {
             ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
         }
@@ -341,24 +484,29 @@
         // Obstacles
         obstacles.forEach(obs => {
             if (obs.hp > 0) {
-                ctx.fillStyle = '#1e293b';
-                ctx.strokeStyle = '#475569';
-                ctx.lineWidth = 4;
+                ctx.fillStyle = '#0b1329';
+                ctx.strokeStyle = '#00f0ff';
+                ctx.shadowColor = '#00f0ff';
+                ctx.shadowBlur = 15;
+                ctx.lineWidth = 3;
                 ctx.beginPath();
                 ctx.arc(obs.x, obs.y, obs.r, 0, Math.PI * 2);
                 ctx.fill();
                 ctx.stroke();
 
-                ctx.fillStyle = 'rgba(255,255,255,0.2)';
-                ctx.fillRect(obs.x - 20, obs.y - obs.r - 12, 40, 4);
+                ctx.fillStyle = 'rgba(0,0,0,0.6)';
+                ctx.fillRect(obs.x - 22, obs.y - obs.r - 14, 44, 5);
                 ctx.fillStyle = '#ff0055';
-                ctx.fillRect(obs.x - 20, obs.y - obs.r - 12, (obs.hp / obs.maxHp) * 40, 4);
+                ctx.fillRect(obs.x - 21, obs.y - obs.r - 13, (obs.hp / obs.maxHp) * 42, 3);
             }
         });
 
         // Power-Ups
         powerups.forEach(p => {
-            ctx.fillStyle = p.type === 'TRIPLE' ? '#ffcc00' : p.type === 'SPEED' ? '#00ff66' : '#00f0ff';
+            const col = p.type === 'TRIPLE' ? '#ffcc00' : p.type === 'SPEED' ? '#00ff66' : '#00f0ff';
+            ctx.fillStyle = col;
+            ctx.shadowColor = col;
+            ctx.shadowBlur = 20;
             ctx.beginPath(); ctx.arc(p.x, p.y, 14, 0, Math.PI * 2); ctx.fill();
         });
 
@@ -366,19 +514,21 @@
         particles.forEach((part, i) => {
             part.x += part.vx; part.y += part.vy; part.life--;
             ctx.fillStyle = part.color;
-            ctx.beginPath(); ctx.arc(part.x, part.y, 3, 0, Math.PI * 2); ctx.fill();
+            ctx.shadowColor = part.color;
+            ctx.shadowBlur = 10;
+            ctx.beginPath(); ctx.arc(part.x, part.y, part.size || 3, 0, Math.PI * 2); ctx.fill();
             if (part.life <= 0) particles.splice(i, 1);
         });
 
-        // Render Local & Synchronized Remote Bullets
+        // Bullets
         Object.values(localBullets).forEach(b => {
             ctx.fillStyle = b.color;
             ctx.shadowColor = b.color;
-            ctx.shadowBlur = 8;
-            ctx.beginPath(); ctx.arc(b.x, b.y, 5, 0, Math.PI * 2); ctx.fill();
+            ctx.shadowBlur = 15;
+            ctx.beginPath(); ctx.arc(b.x, b.y, 6, 0, Math.PI * 2); ctx.fill();
         });
 
-        // Render Opponents with Entity Interpolation
+        // Render Opponents
         const renderTime = Date.now() - INTERPOLATION_OFFSET_MS;
         const latestSnapshot = stateBuffer.length > 0 ? stateBuffer[stateBuffer.length - 1] : null;
 
@@ -401,7 +551,7 @@
             });
         }
 
-        // Render Local Predictive Ship
+        // Render Local Ship
         const localState = getLatestServerPlayerState(myId);
         if (myId && localState && localState.hp > 0) {
             drawSpaceship(
