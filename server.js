@@ -34,7 +34,6 @@ io.on('connection', (socket) => {
 
     const room = rooms[roomId];
     if (room.state === 'LOBBY' && room.players.length < 12) {
-      // Prevent duplicate socket ID joins
       if (!room.players.some(p => p.id === socket.id)) {
         room.players.push({ id: socket.id, name: playerName, isAlive: true });
       }
@@ -118,7 +117,6 @@ io.on('connection', (socket) => {
     const room = rooms[currentRoom];
     if (!room || room.state !== 'VOTING') return;
     
-    // Dead players cannot submit votes
     const voter = room.players.find(p => p.id === socket.id);
     if (!voter || !voter.isAlive) return;
 
@@ -140,11 +138,12 @@ io.on('connection', (socket) => {
 
 function initiateVotingIntermission(room) {
   room.state = 'INTERMISSION';
-  io.to(room.id).emit('start_intermission');
+  // 5-second delay so everyone can review the final stroke on the canvas
+  io.to(room.id).emit('start_intermission', { delaySeconds: 5 });
 
   setTimeout(() => {
     if (rooms[room.id]) startVotingPhase(room);
-  }, 3000);
+  }, 5000);
 }
 
 function startVotingPhase(room) {
@@ -212,7 +211,6 @@ function processVotes(room) {
     const eliminated = room.players.find(p => p.id === votedOutId);
     eliminated.isAlive = false;
 
-    // Direct notification to the eliminated user
     io.to(eliminated.id).emit('you_were_eliminated', { imposterId: room.imposterId, imposterName: imposterPlayer.name });
 
     if (votedOutId === room.imposterId) {

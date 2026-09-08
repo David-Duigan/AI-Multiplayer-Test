@@ -72,6 +72,10 @@
     .role-banner { font-size: 1.2rem; font-weight: bold; text-align: center; padding: 0.5rem; border-radius: 6px; background: #334155; }
     .countdown-widget { position: absolute; bottom: 15px; right: 15px; background: rgba(15,23,42,0.85); padding: 0.5rem 1rem; border-radius: 20px; border: 1px solid #475569; font-weight: bold; font-size: 0.9rem; }
     .reveal-card { background: #334155; padding: 2rem; border-radius: 12px; display: flex; flex-direction: column; gap: 1rem; align-items: center; margin: 1rem 0; border: 2px solid #475569; }
+
+    /* Canvas Drawing Preview Card for Voting Room */
+    .canvas-preview-container { text-align: center; margin-bottom: 0.5rem; background: #0f172a; padding: 1rem; border-radius: 8px; border: 1px solid #334155; }
+    .canvas-preview-container img { max-width: 100%; max-height: 260px; border-radius: 6px; border: 2px solid #475569; background: #ffffff; object-fit: contain; }
   </style>
 </head>
 <body>
@@ -158,14 +162,21 @@
 
   <!-- VOTING INTERMISSION -->
   <div id="intermission-screen" class="screen" style="text-align: center; padding: 4rem 1rem; position: relative;">
-    <h1 style="font-size: 2.8rem; color: #38bdf8;">Voting Stage!</h1>
-    <p style="color: var(--subtext); font-size: 1.2rem; margin-top: 1rem;">Discuss and vote out the imposter...</p>
-    <div class="countdown-widget" id="intermission-timer">Starting in: 3s</div>
+    <h1 style="font-size: 2.8rem; color: #38bdf8;">Round Complete!</h1>
+    <p style="color: var(--subtext); font-size: 1.2rem; margin-top: 1rem;">Take 5 seconds to inspect the final drawing before voting...</p>
+    <div class="countdown-widget" id="intermission-timer">Voting in: 5s</div>
   </div>
 
   <!-- VOTING SCREEN -->
   <div id="vote-screen" class="screen" style="position: relative;">
     <h2 style="text-align: center;">Voting Session</h2>
+    
+    <!-- Drawing Preview in Voting Room -->
+    <div class="canvas-preview-container">
+      <p style="color: var(--subtext); font-size: 0.85rem; margin-bottom: 6px;">Drawing Preview:</p>
+      <img id="drawing-preview-img" src="" alt="Completed Drawing Preview" />
+    </div>
+
     <p style="text-align: center; color: var(--subtext);" id="vote-status">Vote for the Imposter!</p>
     <div id="eliminated-notice" style="display:none; text-align:center; color: var(--danger); font-weight:bold;">YOU ARE ELIMINATED - Observer Mode</div>
     <div class="vote-grid" id="vote-grid" style="margin-top: 1rem;"></div>
@@ -234,6 +245,7 @@
   const toast = document.getElementById('toast');
   const notifyBanner = document.getElementById('notify-banner');
   const strokeSizeSelect = document.getElementById('stroke-size-select');
+  const drawingPreviewImg = document.getElementById('drawing-preview-img');
 
   // Load Saved Name
   const savedName = localStorage.getItem('fake_artist_player_name');
@@ -338,7 +350,7 @@
     const roomId = document.getElementById('room-id').value.trim();
     if (!playerName || !roomId) return;
 
-    joinBtn.disabled = true; // Prevent spam clicks
+    joinBtn.disabled = true;
     localStorage.setItem('fake_artist_player_name', playerName);
     socket.emit('join_room', { roomId, playerName });
   };
@@ -443,7 +455,6 @@
       canvasWrapper.classList.remove('your-turn');
     }
 
-    // Render Side Panel Player List
     if (players) {
       const sidebar = document.getElementById('sidebar-players');
       sidebar.innerHTML = '';
@@ -592,25 +603,27 @@
   }
 
   // Intermission & Voting Screens
-  socket.on('start_intermission', () => {
-    gameScreen.classList.remove('active');
-    intermissionScreen.classList.add('active');
+  socket.on('start_intermission', ({ delaySeconds }) => {
+    // Keep game screen active during the 5 second delay so everyone can inspect the complete canvas
+    let count = delaySeconds || 5;
+    showNotification(`Round Complete! Reviewing drawing... (${count}s)`);
 
-    let count = 3;
-    const timerElem = document.getElementById('intermission-timer');
-    timerElem.innerText = `Starting in: ${count}s`;
+    setTimeout(() => {
+      gameScreen.classList.remove('active');
+      intermissionScreen.classList.add('active');
 
-    clearInterval(intermissionInterval);
-    intermissionInterval = setInterval(() => {
-      count--;
-      if (count >= 0) timerElem.innerText = `Starting in: ${count}s`;
-      if (count <= 0) clearInterval(intermissionInterval);
-    }, 1000);
+      const timerElem = document.getElementById('intermission-timer');
+      timerElem.innerText = `Voting starting soon...`;
+    }, (count - 1) * 1000);
   });
 
   socket.on('start_voting', ({ alivePlayers, players }) => {
     intermissionScreen.classList.remove('active');
+    gameScreen.classList.remove('active');
     voteScreen.classList.add('active');
+
+    // Capture the finished drawing and display image preview inside the voting room
+    drawingPreviewImg.src = canvas.toDataURL('image/png');
 
     const grid = document.getElementById('vote-grid');
     const notice = document.getElementById('eliminated-notice');
