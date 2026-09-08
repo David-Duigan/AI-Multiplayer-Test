@@ -60,10 +60,10 @@
         }
 
         #crosshair {
-            position: absolute; width: 20px; height: 20px;
+            position: absolute; width: 22px; height: 22px;
             border: 2px solid #00f0ff; border-radius: 50%;
             pointer-events: none; transform: translate(-50%, -50%);
-            z-index: 200; box-shadow: 0 0 10px #00f0ff;
+            z-index: 200; box-shadow: 0 0 12px #00f0ff;
         }
 
         canvas { display: block; width: 100vw; height: 100vh; cursor: none; }
@@ -98,10 +98,13 @@
     let serverPlayers = {};
     let interpolatedPlayers = {};
     let bullets = [];
+    let powerups = [];
     let particles = [];
+    let hazardAngle = 0;
     let keys = {};
     let mouse = { x: 0, y: 0 };
     let lastDash = 0;
+    let screenShake = 0;
 
     function resizeCanvas() {
         canvas.width = window.innerWidth;
@@ -119,10 +122,21 @@
         crosshair.style.top = `${e.clientY}px`;
     });
 
+    // Local-Origin Shoot Dispatch
     window.addEventListener('mousedown', () => {
         if (!myId || !serverPlayers[myId] || serverPlayers[myId].hp <= 0) return;
+        
         const angle = Math.atan2(mouse.y - localPlayer.y, mouse.x - localPlayer.x);
-        socket.emit('requestShoot', { angle });
+
+        // Send local position as the spawn origin
+        socket.emit('requestShoot', {
+            originX: localPlayer.x,
+            originY: localPlayer.y,
+            angle: angle,
+            isTriple: serverPlayers[myId].tripleTimer > Date.now()
+        });
+
+        screenShake = 3;
     });
 
     function toggleFullscreen() {
@@ -141,9 +155,7 @@
         }
     }
 
-    socket.on('initPlayer', (data) => {
-        myId = data.id;
-    });
+    socket.on('initPlayer', (data) => myId = data.id);
 
     socket.on('roomState', (data) => {
         serverPlayers = data.players;
@@ -161,11 +173,23 @@
         }
     });
 
+    socket.on('impactEvent', (data) => {
+        screenShake = 8;
+        for (let i = 0; i < 15; i++) {
+            particles.push({
+                x: data.x, y: data.y,
+                vx: (Math.random() - 0.5) * 8, vy: (Math.random() - 0.5) * 8,
+                life: 20, color: data.color
+            });
+        }
+    });
+
     socket.on('serverState', (data) => {
         serverPlayers = data.players;
         bullets = data.bullets;
+        powerups = data.powerups;
+        hazardAngle = data.hazardAngle;
 
-        // Initialize target positions for interpolation
         Object.keys(serverPlayers).forEach(id => {
             if (!interpolatedPlayers[id]) {
                 interpolatedPlayers[id] = { ...serverPlayers[id] };
@@ -175,10 +199,9 @@
         updateScoreboard();
     });
 
-    // Fixed-Rate Network Transmitter (Guarantees sync even when tab is out of focus)
+    // Send high-rate local movement
     setInterval(() => {
         if (!myId || !serverPlayers[myId] || serverPlayers[myId].hp <= 0) return;
-
         socket.emit('playerTransform', {
             x: localPlayer.x,
             y: localPlayer.y,
@@ -186,21 +209,21 @@
         });
     }, 1000 / 60);
 
-    // Local Movement Computation
     function updateLocalPlayer() {
         if (!myId || !serverPlayers[myId] || serverPlayers[myId].hp <= 0) return;
 
-        let speed = 6;
+        const p = serverPlayers[myId];
+        let speed = p.speedTimer > Date.now() ? 10 : 6;
 
-        if (keys['shift'] && Date.now() - lastDash > 1200) {
-            speed = 35;
+        if (keys['shift'] && Date.now() - lastDash > 1000) {
+            speed = 32;
             lastDash = Date.now();
 
             for (let i = 0; i < 12; i++) {
                 particles.push({
                     x: localPlayer.x, y: localPlayer.y,
-                    vx: (Math.random() - 0.5) * 4, vy: (Math.random() - 0.5) * 4,
-                    life: 15, color: serverPlayers[myId].color
+                    vx: (Math.random() - 0.5) * 5, vy: (Math.random() - 0.5) * 5,
+                    life: 15, color: p.color
                 });
             }
         }
@@ -215,7 +238,6 @@
         localPlayer.angle = Math.atan2(mouse.y - localPlayer.y, mouse.x - localPlayer.x);
     }
 
-    // Smoothly Interpolate Opponent Positions
     function updateOpponents() {
         const lerpFactor = 0.35;
         Object.keys(serverPlayers).forEach(id => {
@@ -228,27 +250,29 @@
                 curr.angle = target.angle;
                 curr.hp = target.hp;
                 curr.color = target.color;
+                curr.shieldTimer = target.shieldTimer;
+                curr.speedTimer = target.speedTimer;
             }
         });
     }
 
-    function drawSpaceship(x, y, angle, color, hp) {
+    function drawSpaceship(x, y, angle, color, hp, shieldActive, speedActive) {
         ctx.save();
         ctx.translate(x, y);
         ctx.rotate(angle);
 
         // Thruster flame
-        ctx.fillStyle = '#ff5500';
+        ctx.fillStyle = speedActive ? '#00f0ff' : '#ff5500';
         ctx.beginPath();
         ctx.moveTo(-22, -6);
-        ctx.lineTo(-32 - Math.random() * 8, 0);
+        ctx.lineTo(-32 - Math.random() * (speedActive ? 16 : 8), 0);
         ctx.lineTo(-22, 6);
         ctx.fill();
 
-        // Ship wings
+        // Ship hull
         ctx.fillStyle = color;
         ctx.shadowColor = color;
-        ctx.shadowBlur = 12;
+        ctx.shadowBlur = 14;
 
         ctx.beginPath();
         ctx.moveTo(25, 0);
@@ -266,6 +290,17 @@
 
         ctx.restore();
 
+        // Shield Aura
+        if (shieldActive) {
+            ctx.strokeStyle = '#00f0ff';
+            ctx.lineWidth = 3;
+            ctx.shadowColor = '#00f0ff';
+            ctx.shadowBlur = 15;
+            ctx.beginPath();
+            ctx.arc(x, y, 32, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+
         // Health Bar
         if (hp > 0) {
             ctx.fillStyle = 'rgba(255,255,255,0.2)';
@@ -276,9 +311,18 @@
     }
 
     function render() {
+        ctx.save();
+
+        // Camera Shake
+        if (screenShake > 0) {
+            ctx.translate((Math.random() - 0.5) * screenShake, (Math.random() - 0.5) * screenShake);
+            screenShake *= 0.9;
+            if (screenShake < 0.5) screenShake = 0;
+        }
+
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        // Space Grid
+        // Grid Background
         ctx.strokeStyle = 'rgba(30, 41, 59, 0.4)';
         ctx.lineWidth = 1;
         for (let x = 0; x < canvas.width; x += 60) {
@@ -287,6 +331,38 @@
         for (let y = 0; y < canvas.height; y += 60) {
             ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
         }
+
+        // Central Rotating Hazard
+        ctx.save();
+        ctx.translate(canvas.width / 2, canvas.height / 2);
+        ctx.rotate(hazardAngle);
+        ctx.strokeStyle = 'rgba(255, 0, 85, 0.6)';
+        ctx.lineWidth = 8;
+        ctx.shadowColor = '#ff0055';
+        ctx.shadowBlur = 20;
+        ctx.beginPath();
+        ctx.moveTo(-150, 0);
+        ctx.lineTo(150, 0);
+        ctx.stroke();
+        ctx.restore();
+
+        // Render Power-Ups
+        powerups.forEach(p => {
+            ctx.shadowBlur = 15;
+            let col = '#00f0ff';
+            if (p.type === 'TRIPLE') col = '#ffcc00';
+            if (p.type === 'SPEED') col = '#00ff66';
+
+            ctx.fillStyle = col;
+            ctx.shadowColor = col;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, 16, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.fillStyle = '#000';
+            ctx.font = '900 12px sans-serif';
+            ctx.fillText(p.type[0], p.x - 4, p.y + 4);
+        });
 
         // Render Particles
         for (let i = particles.length - 1; i >= 0; i--) {
@@ -301,7 +377,7 @@
             if (part.life <= 0) particles.splice(i, 1);
         }
 
-        // Render Bullets (Server-Synced)
+        // Render Bullets
         bullets.forEach(b => {
             ctx.fillStyle = b.color;
             ctx.shadowColor = b.color;
@@ -315,16 +391,19 @@
         Object.keys(interpolatedPlayers).forEach(id => {
             if (id !== myId) {
                 const p = interpolatedPlayers[id];
-                if (p.hp > 0) drawSpaceship(p.x, p.y, p.angle, p.color, p.hp);
+                if (p.hp > 0) {
+                    drawSpaceship(p.x, p.y, p.angle, p.color, p.hp, p.shieldTimer > Date.now(), p.speedTimer > Date.now());
+                }
             }
         });
 
         // Render Local Player
         if (myId && serverPlayers[myId] && serverPlayers[myId].hp > 0) {
-            drawSpaceship(localPlayer.x, localPlayer.y, localPlayer.angle, serverPlayers[myId].color, serverPlayers[myId].hp);
+            const p = serverPlayers[myId];
+            drawSpaceship(localPlayer.x, localPlayer.y, localPlayer.angle, p.color, p.hp, p.shieldTimer > Date.now(), p.speedTimer > Date.now());
         }
 
-        ctx.shadowBlur = 0;
+        ctx.restore();
     }
 
     function updateScoreboard() {
